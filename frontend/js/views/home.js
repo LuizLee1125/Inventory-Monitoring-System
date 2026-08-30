@@ -11,7 +11,7 @@
 // is muscle memory. Each panel shows a few of them so they stay discoverable.
 
 import { api } from '../api.js';
-import { count, el, money, toast } from '../ui.js';
+import { count, date, el, money, monthsAgo, qty, toast, today } from '../ui.js';
 import { can, changePassword, session, setTitle, signOut } from '../app.js';
 
 const ACTIONS = {
@@ -53,12 +53,32 @@ const SHORTCUTS = [
   { key: '9', label: 'Change Password', action: 'password', permission: 'report:read' },
 ];
 
+// A role whose DOS counterpart had its own small menu keeps that menu's keys,
+// and gets a home screen built around those options rather than the main
+// menu's three panels. Sales is MNUSO.PRG: A] was SIFYL, the invoice file you
+// printed from; B] was STKPURCH, "stocks purchased given a specified date";
+// C] closed the session.
+//
+// The options are the key bindings, not a drawn list — the screen shows each
+// option's work instead. `?` still recites them.
+const ROLE_MENU = {
+  sales: {
+    options: [
+      { key: 'A', label: 'Print Sales Invoice', permission: 'invoice:read',
+        path: '/invoices/print' },
+      { key: 'B', label: 'View Purchases', permission: 'report:read',
+        path: '/reports/stock-purchases' },
+      { key: 'C', label: 'Exit', permission: 'report:read', action: 'signout' },
+    ],
+  },
+};
+
 const ROLE_LEAD = {
   admin: 'Everything is here.',
   manager: 'The whole system, minus user administration.',
   invoicing: 'Invoicing and the customer file.',
   ar: 'Collections and what is still owed.',
-  sales: 'Prices, stock on hand and your customers.',
+  sales: 'Invoices to print, and what has come in.',
   inventory: 'Stock, purchasing and the supplier file.',
   viewer: 'Read-only access.',
 };
@@ -67,7 +87,7 @@ const PRIMARY = {
   manager: { label: 'Open receivables', path: '/reports/aging', permission: 'report:read' },
   invoicing: { label: 'Raise an invoice', path: '/invoices/new', permission: 'invoice:write' },
   ar: { label: 'Record a payment', path: '/collections/new', permission: 'collection:write' },
-  sales: { label: 'Look up an item', path: '/stock', permission: 'stock:read' },
+  sales: { label: 'Print an invoice', path: '/invoices/print', permission: 'invoice:read' },
   inventory: { label: 'Receive a delivery', path: '/purchases/new', permission: 'purchase:write' },
 };
 
@@ -78,21 +98,35 @@ export async function render(container) {
   detachShortcuts?.();
   container.classList.add('home-fit');
 
-  const [dash, aging, maint, admin] = await Promise.all([
+  const menu = ROLE_MENU[session.user.role];
+
+  // A role with its own menu is not shown receivables it cannot open, so the
+  // aging figures are not fetched for it. It gets the deliveries behind its
+  // second option instead.
+  const [dash, aging, maint, admin, deliveries] = await Promise.all([
     api.get('/reports/dashboard'),
-    can('report:read') ? api.get('/reports/aging', { page_size: 10 }).catch(() => null) : null,
+    !menu && can('report:read')
+      ? api.get('/reports/aging', { page_size: 10 }).catch(() => null) : null,
     can('maintenance:run') ? api.get('/maintenance/status').catch(() => null) : null,
     can('admin:users') ? api.get('/admin/stats').catch(() => null) : null,
+    menu ? api.get('/reports/stock-purchases', {
+      date_from: monthsAgo(3), date_to: today(), limit: 12,
+    }).catch(() => null) : null,
   ]);
 
   container.append(
     greeting(dash),
-    kpis(dash),
-    el('div', { class: 'home-panels' }, [
-      transactionsPanel(dash),
-      reportsPanel(dash, aging),
-      maintenancePanel(dash, maint, admin),
-    ].filter(Boolean)),
+    menu ? menuKpis(dash) : kpis(dash),
+    menu
+      ? el('div', { class: 'home-panels two' }, [
+        printPanel(dash),
+        deliveriesPanel(deliveries),
+      ])
+      : el('div', { class: 'home-panels' }, [
+        transactionsPanel(dash),
+        reportsPanel(dash, aging),
+        maintenancePanel(dash, maint, admin),
+      ].filter(Boolean)),
   );
 
   bindShortcuts();
@@ -158,14 +192,39 @@ function kpis(dash) {
     ])));
 }
 
+// The main-menu figures lead with receivables, which a menu role has no screen
+// for. These four all land somewhere it is allowed to go.
+function menuKpis(dash) {
+  const t = dash.today || {};
+  const stock = dash.stock || {};
+  const depleted = stock.depleted || 0;
+
+  const tiles = [
+    ['Invoiced today', money(t.sales), `${count(t.invoices)} invoices`, '', '/invoices'],
+    ['Sales this month', money(dash.month?.sales), `${count(dash.month?.invoices)} invoices`,
+      '', '/invoices'],
+    ['Items on file', count(stock.items), `${money(stock.value)} at cost`, '', '/stock'],
+    ['Out of stock', count(depleted), depleted > 0 ? 'Cannot be sold today' : 'Everything in stock',
+      depleted > 0 ? 'warn' : 'ok', '/stock'],
+  ];
+
+  return el('div', { class: 'home-kpis' }, tiles.map(([label, value, sub, tone, path]) =>
+    el('a', { class: `home-kpi ${tone}`, href: `#${path}` }, [
+      el('span', { class: 'value', text: value }),
+      el('span', { class: 'label', text: label }),
+      el('span', { class: 'sub', text: sub }),
+    ])));
+}
+
 /* --------------------------------------------------------------- panels -- */
 
-function panel(title, hint, body) {
+function panel(title, hint, body, key = '') {
   return el('section', { class: 'home-panel' }, [
     el('div', { class: 'home-panel-head' }, [
+      key ? el('span', { class: 'panel-key', text: `${key}]` }) : null,
       el('h3', { text: title }),
       el('span', { class: 'home-panel-hint', text: hint }),
-    ]),
+    ].filter(Boolean)),
     el('div', { class: 'home-panel-body' }, [body]),
   ]);
 }
@@ -181,6 +240,44 @@ function row(href, left, middle, right, tone = '') {
     el('span', { class: 'r-name', text: middle }),
     el('span', { class: `r-value ${tone}`, text: right }),
   ])]);
+}
+
+// The menu's two options, each doing its own work rather than pointing at the
+// screen that does it. A list of three links beside a sidebar containing the
+// same three links is a menu of menus; the DOS screen only needed one because
+// a character terminal could not show an invoice and a menu at once.
+//
+// The letters stay in the headings. They are what the account has typed for
+// twenty-five years, and they still work from the keyboard.
+function printPanel(dash) {
+  const invoices = dash.recent_invoices || [];
+
+  return panel('Print Sales Invoice', 'Latest invoices', el('div', { class: 'home-stack' }, [
+    rows(invoices.map((r) => row(
+      `#/invoices/print/${encodeURIComponent(r.inv_no)}`,
+      r.inv_no, `${date(r.inv_date)} · ${r.customer_name}`, money(r.net_amount),
+      r.status === 'CANCELLED' ? 'danger-text' : '')),
+      'No invoices on file yet.'),
+    more('/invoices/print', 'Find another invoice'),
+  ]), 'A');
+}
+
+function deliveriesPanel(deliveries) {
+  const lines = deliveries?.rows || [];
+
+  return panel('View Purchases', 'What came in, last 3 months',
+    el('div', { class: 'home-stack' }, [
+    rows(lines.map((r) => row(
+      `#/stock/${encodeURIComponent(r.stock_code)}`,
+      r.stock_code, `${date(r.doc_date)} · ${r.description}`,
+      `${qty(r.quantity)} ${r.unit || ''}`.trim())),
+      'Nothing has been received in the last three months.'),
+    more('/reports/stock-purchases', 'Choose the dates'),
+  ]), 'B');
+}
+
+function more(path, label) {
+  return el('a', { class: 'home-more', href: `#${path}` }, [label, el('span', { text: '→' })]);
 }
 
 // Lists are rendered longer than a short screen can show and the panel clips
@@ -274,8 +371,12 @@ let detachShortcuts = null;
 function bindShortcuts() {
   detachShortcuts?.();
 
-  const map = new Map(
-    SHORTCUTS.filter((s) => can(s.permission)).map((s) => [s.key, s]));
+  // A role with its own menu owns its letters outright: on the sales screen A
+  // is Print Sales Invoice, not Stock File. Nothing the menu does not show is
+  // bound, so no key leads anywhere the sidebar has not offered.
+  const menu = ROLE_MENU[session.user.role];
+  const map = new Map((menu ? menu.options : SHORTCUTS)
+    .filter((s) => can(s.permission)).map((s) => [s.key, s]));
 
   const onKey = (event) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;

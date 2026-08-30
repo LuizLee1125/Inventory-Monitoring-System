@@ -359,6 +359,43 @@ def purchased_items(date_from: str = "", date_to: str = "", supplier: str = "",
                        "items": len(rows)}}
 
 
+@router.get("/stock-purchases")
+def stock_purchases(date_from: str = "", date_to: str = "", stock_code: str = "",
+                    limit: int = Query(500, le=5000),
+                    _user: dict = Depends(require("report:read"))) -> dict:
+    """View Purchases — `STKPURCH.PRG`, "stocks purchased given a specified
+    date".
+
+    One row per purchase line rather than one per item: the DOS screen asked
+    for a start and a stop date and then listed every receipt in between, which
+    is what a salesman wants when a customer asks whether something came in.
+    `purchased-items` answers the other question, totalled by item.
+    """
+    where = ["m.move_type = 'PURCHASE'", "m.doc_date BETWEEN ? AND ?"]
+    params: list = [date_from or "1900-01-01", date_to or "2999-12-31"]
+    if stock_code:
+        where.append("m.stock_code = ?")
+        params.append(stock_code.upper())
+
+    rows = db.query(
+        f"""
+        SELECT m.doc_date, m.doc_no, m.stock_code, m.description,
+               ROUND(m.qty, 2) AS quantity,
+               COALESCE(NULLIF(m.unit, ''), s.unit) AS unit,
+               ROUND(m.unit_cost, 2) AS unit_cost,
+               ROUND(m.line_total, 2) AS line_total,
+               m.supplier_code, s.qty_on_hand
+        FROM stock_moves m LEFT JOIN stock s ON s.code = m.stock_code
+        WHERE {' AND '.join(where)}
+        ORDER BY m.doc_date DESC, m.doc_no DESC, m.id DESC LIMIT ?
+        """, params + [limit])
+
+    return {"rows": rows,
+            "totals": {"value": round(sum(r["line_total"] or 0 for r in rows), 2),
+                       "lines": len(rows),
+                       "items": len({r["stock_code"] for r in rows})}}
+
+
 @router.get("/returns-summary")
 def returns_summary(date_from: str = "", date_to: str = "",
                     group_by: str = "item",     # item | customer | month

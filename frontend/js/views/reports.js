@@ -6,7 +6,7 @@ import {
   attachLookup, card, clear, count, dataTable, date, debounce, el, money,
   monthsAgo, qty, select, statusTag, today, toolbar,
 } from '../ui.js';
-import { setTitle } from '../app.js';
+import { session, setTitle } from '../app.js';
 
 // Named as they were on the DOS Reports column, so the office recognises them.
 const REPORTS = {
@@ -15,6 +15,7 @@ const REPORTS = {
   sales: 'Sales Summary',
   purchases: 'Purchase Summary',
   'purchased-items': 'Purchased Items',
+  'stock-purchases': 'View Purchases',
   'returns-summary': 'Sales Return Summary',
   aging: 'Accounts Receivable',
   collections: 'Collection Summary',
@@ -24,11 +25,26 @@ const REPORTS = {
   movers: 'Fast and slow movers',
 };
 
+// A role that is given a smaller system than its permissions allow gets a
+// smaller picker too, so the dropdown cannot offer a report its sidebar has
+// withheld. Roles absent from this table see the full list.
+const ROLE_REPORTS = {
+  sales: ['price-inquiry', 'stock-purchases'],
+};
+
+function reportsFor() {
+  const only = ROLE_REPORTS[session.user?.role];
+  const entries = Object.entries(REPORTS);
+  return only ? entries.filter(([name]) => only.includes(name)) : entries;
+}
+
 export async function render(container, params = {}) {
-  const name = params.name || 'aging';
+  const available = reportsFor();
+  const fallback = available.some(([key]) => key === 'aging') ? 'aging' : available[0][0];
+  const name = params.name || fallback;
   setTitle(REPORTS[name] || 'Report');
 
-  const picker = select('report', Object.entries(REPORTS), name);
+  const picker = select('report', available, name);
   picker.addEventListener('change', () => { window.location.hash = `#/reports/${picker.value}`; });
 
   const bar = toolbar([
@@ -45,6 +61,7 @@ export async function render(container, params = {}) {
     sales: salesReport,
     purchases: purchasesReport,
     'purchased-items': purchasedItems,
+    'stock-purchases': stockPurchases,
     'returns-summary': returnsSummary,
     inventory: inventoryReport,
     expiring: expiringReport,
@@ -170,6 +187,51 @@ async function purchasedItems(host) {
       onRowClick: (row) => { window.location.hash = `#/stock/${encodeURIComponent(row.stock_code)}`; },
       footer: { description: `${count(data.totals.items)} items`, value: money(data.totals.value) },
       emptyText: 'Nothing was purchased in this period.',
+    }));
+  }
+
+  await draw();
+}
+
+// View Purchases — STKPURCH.PRG. It asked for a start and a stop date and then
+// listed every receipt between them, one line per delivery rather than a total
+// per item, which is the question a salesman is actually being asked: did that
+// come in, when, and how much of it is left. Purchased Items above answers the
+// other one. Three months back is the default because the DOS screen opened on
+// the earliest recorded date and nobody wanted the whole file.
+async function stockPurchases(host) {
+  const range = dateRange(() => draw(), monthsAgo(3));
+  const table = el('div');
+  host.append(
+    el('div', { class: 'toolbar' }, [
+      el('span', { class: 'hint', text: 'Start at issued date' }), range.from,
+      el('span', { class: 'hint', text: 'stop at' }), range.to,
+    ]),
+    el('div', { class: 'card' }, [table]));
+
+  async function draw() {
+    loading(table);
+    const data = await api.get('/reports/stock-purchases', {
+      date_from: range.from.value, date_to: range.to.value,
+    });
+    clear(table);
+    table.append(dataTable([
+      { key: 'doc_date', label: 'Pur. date', render: (r) => date(r.doc_date) },
+      { key: 'doc_no', label: 'Document', class: 'mono' },
+      { key: 'stock_code', label: 'Stock code', class: 'mono' },
+      { key: 'description', label: 'Description', class: 'wrap' },
+      { key: 'quantity', label: 'Qty bought', align: 'right', render: (r) => qty(r.quantity) },
+      { key: 'unit', label: 'Unit' },
+      { key: 'unit_cost', label: 'Price', align: 'right', render: (r) => money(r.unit_cost) },
+      { key: 'line_total', label: 'Value', align: 'right', render: (r) => money(r.line_total) },
+      { key: 'qty_on_hand', label: 'On hand', align: 'right', render: (r) => qty(r.qty_on_hand) },
+    ], data.rows, {
+      onRowClick: (row) => { window.location.hash = `#/stock/${encodeURIComponent(row.stock_code)}`; },
+      footer: {
+        description: `${count(data.totals.lines)} deliveries · ${count(data.totals.items)} items`,
+        line_total: money(data.totals.value),
+      },
+      emptyText: 'Nothing was received between these dates.',
     }));
   }
 

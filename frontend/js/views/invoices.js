@@ -122,7 +122,10 @@ async function detail(container, invNo) {
     toolbar([
       el('button', { class: 'btn', text: '‹ Back to invoices', onClick: () => { window.location.hash = '#/invoices'; } }),
       el('span', { class: 'spacer' }),
-      el('button', { class: 'btn', text: 'Print', onClick: () => window.print() }),
+      // Printing this screen would send the stat boxes and the payments card to
+      // the printer. The document lives on its own page.
+      el('a', { class: 'btn', text: 'Print',
+                href: `#/invoices/print/${encodeURIComponent(invoice.inv_no)}` }),
       can('invoice:write') && invoice.status !== 'CANCELLED'
         ? el('button', { class: 'btn', text: 'Edit header', onClick: () => editHeader(invoice) })
         : null,

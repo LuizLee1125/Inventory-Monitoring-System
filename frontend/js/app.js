@@ -2,7 +2,7 @@
 
 import { api, onUnauthorized } from './api.js';
 import { $, clear, el, field, input, modal, reportError, toast } from './ui.js';
-import { resolve, route, setNotFound, start } from './router.js';
+import { currentPath, resolve, route, setNotFound, start } from './router.js';
 import { setupSearch } from './omni.js';
 
 import * as home from './views/home.js';
@@ -14,6 +14,7 @@ import * as stock from './views/stock.js';
 import * as customers from './views/customers.js';
 import * as suppliers from './views/suppliers.js';
 import * as invoices from './views/invoices.js';
+import * as printInvoice from './views/printInvoice.js';
 import * as purchases from './views/purchases.js';
 import * as returns from './views/returns.js';
 import * as collections from './views/collections.js';
@@ -39,6 +40,10 @@ const NAV = [
     { path: '/customers', label: 'Customer File', icon: '☺', permission: 'customer:read' },
     { path: '/suppliers', label: 'Supplier File', icon: '⌂', permission: 'supplier:read' },
     { path: '/invoices', label: 'Invoices', icon: '▦', permission: 'invoice:read' },
+    // The sales account reaches invoices to print them, not to browse them, so
+    // its sidebar names the errand. Other roles get there from the invoice.
+    { path: '/invoices/print', label: 'Print Invoice', icon: '⎙',
+      permission: 'invoice:read', roles: ['sales'] },
     { path: '/purchases', label: 'Purchases', icon: '⇩', permission: 'purchase:read' },
     { path: '/returns', label: 'Sales Returns', icon: '↩', permission: 'return:read' },
     { path: '/collections', label: 'Collections', icon: '₱', permission: 'collection:read' },
@@ -49,6 +54,8 @@ const NAV = [
     { path: '/reports/inventory', label: 'Inventory', icon: '≡', permission: 'report:read' },
     { path: '/reports/sales', label: 'Sales Summary', icon: '↗', permission: 'report:read' },
     { path: '/reports/purchases', label: 'Purchase Summary', icon: '⇩', permission: 'report:read' },
+    { path: '/reports/purchased-items', label: 'Purchased Items', icon: '⌸', permission: 'report:read' },
+    { path: '/reports/stock-purchases', label: 'View Purchases', icon: '⇲', permission: 'report:read' },
     { path: '/reports/aging', label: 'Accounts Receivable', icon: '⏱', permission: 'report:read' },
     { path: '/reports/expiring', label: 'Expiration Inquiry', icon: '⚑', permission: 'report:read' },
     { path: '/overview', label: 'Overview', icon: '▤', permission: 'report:read' },
@@ -62,11 +69,36 @@ const NAV = [
   ] },
 ];
 
+// Some roles are given a smaller system than their permissions would allow.
+// The DOS build did the same thing with ACCESMNU: a sales clerk could read the
+// same files as everyone else, but was only ever shown the Sales Order menu —
+// two destinations and an exit. A role listed here sees those screens and
+// nothing else; a role that is absent sees everything it has rights to.
+//
+// This shapes the UI, not the API. Permissions remain the real boundary.
+const ROLE_SCREENS = {
+  sales: [
+    '/', '/invoices', '/stock', '/customers',
+    '/reports/price-inquiry', '/reports/stock-purchases',
+  ],
+};
+
+function allowed(path) {
+  const screens = ROLE_SCREENS[session.user?.role];
+  if (!screens) return true;
+  const target = path.split('?')[0];
+  return screens.some((screen) => (screen === '/'
+    ? target === '/'
+    : target === screen || target.startsWith(`${screen}/`)));
+}
+
 function buildNav() {
   const nav = $('#nav');
   clear(nav);
   for (const section of NAV) {
-    const items = section.items.filter((item) => can(item.permission));
+    const items = section.items.filter((item) => can(item.permission)
+      && allowed(item.path)
+      && (!item.roles || item.roles.includes(session.user?.role)));
     if (!items.length) continue;
     if (section.group) nav.append(el('div', { class: 'nav-group', text: section.group }));
     for (const item of items) {
@@ -79,12 +111,20 @@ function buildNav() {
 }
 
 function highlightNav() {
-  const path = window.location.hash.slice(1) || '/';
-  $('#nav').querySelectorAll('a').forEach((link) => {
+  const path = (window.location.hash.slice(1) || '/').split('?')[0];
+  const links = [...$('#nav').querySelectorAll('a')];
+
+  // Only the most specific entry lights up. Without this, /invoices/print
+  // marks both Invoices and Print Invoice, because one path is a prefix of the
+  // other.
+  const matches = links.filter((link) => {
     const target = link.dataset.path;
-    const active = target === '/' ? path === '/' : path.startsWith(target);
-    link.classList.toggle('active', active);
+    return target === '/' ? path === '/' : path === target || path.startsWith(`${target}/`);
   });
+  const best = matches.reduce((longest, link) =>
+    (!longest || link.dataset.path.length > longest.dataset.path.length ? link : longest), null);
+
+  for (const link of links) link.classList.toggle('active', link === best);
   $('#sidebar').classList.remove('open');
 }
 
@@ -108,10 +148,10 @@ function mount(view, params) {
 }
 
 function guard(permission, view) {
-  return (params) => {
+  return (params, full) => {
     // Nothing renders while signed out; the login screen owns the window.
     if (!session.user) return;
-    if (!can(permission)) {
+    if (!can(permission) || !allowed(full ?? currentPath())) {
       setTitle('Not allowed');
       clear(page());
       page().append(el('div', { class: 'empty' },
@@ -138,6 +178,10 @@ function registerRoutes() {
   route('/suppliers/:code', guard('supplier:read', suppliers));
   route('/invoices', guard('invoice:read', invoices));
   route('/invoices/new', guard('invoice:write', invoices));
+  // Both of these must be registered before '/invoices/:id', which would
+  // otherwise swallow 'print' as an invoice number.
+  route('/invoices/print', guard('invoice:read', printInvoice));
+  route('/invoices/print/:id', guard('invoice:read', printInvoice));
   route('/invoices/:id', guard('invoice:read', invoices));
   route('/purchases', guard('purchase:read', purchases));
   route('/purchases/new', guard('purchase:write', purchases));

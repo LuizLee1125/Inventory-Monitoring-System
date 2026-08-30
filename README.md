@@ -379,6 +379,41 @@ onto explicit roles:
 Permissions are checked on every API call, not just hidden in the interface. The last active
 administrator cannot be demoted or disabled.
 
+### The sales screen
+
+`sales` is the one role that is deliberately shown less than its permissions allow, because its
+DOS counterpart was: `ACCESMNU = A` opened `MNUSO.PRG`, a box in the middle of an empty screen
+with two destinations and an exit. The home screen is built around those two options, on the same
+letters — but it shows each option's work rather than drawing a list of them. A menu of three links
+beside a sidebar holding the same three links is a menu of menus; the character terminal only
+needed one because it could not show an invoice and a menu at the same time. So the home screen is
+the latest invoices, each row one click from the printed document, next to what has come in over
+the last three months. `A` and `B` still move the screen from the keyboard, `C` still signs out,
+and `?` still recites them:
+
+| Key | Option | Where it goes | Legacy program |
+| --- | --- | --- | --- |
+| A | Print Sales Invoice | `/invoices/print` — find one, then print the document | `SIFYL`, `SIFYLP` |
+| B | View Purchases | `/reports/stock-purchases` — every delivery between two dates | `STKPURCH` |
+| C | Exit | Sign out | — |
+
+The sidebar is trimmed to match: Print Invoice, Invoices, Stock File, Customer File, Price Inquiry
+and View Purchases, and nothing else. Suppliers, purchase documents, returns, collections,
+receivables, the archive and maintenance are all withheld, and typing one of those addresses lands
+on "Your role does not have access to this screen." This is UI shaping, done in `ROLE_SCREENS` in
+`frontend/js/app.js`; the permission checks on the API remain the real boundary.
+
+**Print Sales Invoice** (`frontend/js/views/printInvoice.js`) is the invoice as a document, not the
+detail screen sent to a printer: company heading, the customer block with TIN and business style,
+the lines, the three discount rates, the net amount spelled out in words, and signature rules. It
+reads `GET /invoices/{no}/print`, which had been in the API since the first build with nothing
+calling it. A cancelled invoice prints under a CANCELLED watermark. Every role reaches it — the
+Print button on the invoice detail screen opens it — but only `sales` gets a sidebar entry for it.
+
+**View Purchases** (`GET /reports/stock-purchases`) lists one row per delivery over a start and
+stop date, the six columns `STKPURCH` printed plus the document number. It is a different question
+from Purchased Items, which totals by item; both are in the Reports list.
+
 ---
 
 ## How it works

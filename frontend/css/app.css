@@ -668,11 +668,49 @@ a { color: var(--primary); }
 
 .home-empty { padding: 22px 16px; text-align: center; color: var(--text-faint); font-size: 12.5px; }
 
+/* A role with its own menu gets two panels rather than three, and they carry
+   equal weight: they are the two things the account does.
+   Two panels cannot fill a wide screen the way three can, so these size to
+   their contents and stop, rather than stretching a handful of rows down the
+   whole viewport. The cap keeps a busy day from pushing them off the bottom —
+   the list clips inside the panel exactly as it does elsewhere. */
+.home-panels.two { grid-template-columns: repeat(2, 1fr); align-items: start; }
+.home-panels.two > .home-panel { max-height: 100%; }
+
+/* The DOS letter, kept on the heading of the panel that does that option's
+   work. The key still moves the screen; the label no longer needs a row of
+   its own next to a sidebar that already lists it. */
+.panel-key {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* List above, one way out below, and the list — not the panel — is what runs
+   short on a short screen. */
+.home-stack { display: flex; flex-direction: column; height: 100%; }
+.home-stack > :first-child { flex: 1; min-height: 0; overflow: hidden; }
+
+.home-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 550;
+  text-decoration: none;
+  color: var(--primary);
+}
+.home-more:hover { background: var(--surface-2); }
+
 /* Below this the three panels cannot hold their content side by side, so the
    home screen gives up on fitting and scrolls like every other page. */
 @media (max-width: 1100px), (max-height: 620px) {
   .page.home-fit { overflow-y: auto; }
-  .home-panels { grid-template-columns: 1fr; }
+  .home-panels, .home-panels.two { grid-template-columns: 1fr; }
   .home-kpis { grid-template-columns: repeat(2, 1fr); }
 }
 
@@ -1008,15 +1046,176 @@ input.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ------------------------------------------------------------- printing -- */
 
-.print-doc { background: #fff; color: #000; padding: 26px; }
-.print-doc table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.print-doc th, .print-doc td { padding: 5px 7px; border-bottom: 1px solid #ccc; }
+/* The invoice document. Always on white with black text, on screen as well as
+   on paper: this is a preview of the sheet that gets signed, so it does not
+   follow the app's theme. */
+.print-doc {
+  position: relative;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 34px 38px 30px;
+  background: #fff;
+  color: #111;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.print-doc table { width: 100%; border-collapse: collapse; }
+.print-doc .mono { font-family: var(--mono); }
+
+.doc-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 2px solid #111;
+}
+.doc-head h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+}
+.doc-head p {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #555;
+}
+.doc-meta { width: auto; font-size: 12px; }
+.doc-meta th {
+  padding: 1px 12px 1px 0;
+  text-align: left;
+  font-weight: 500;
+  color: #555;
+  white-space: nowrap;
+}
+.doc-meta td { padding: 1px 0; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+.doc-parties {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 22px;
+  padding: 16px 0 18px;
+}
+.doc-party { display: flex; flex-direction: column; gap: 1px; }
+.doc-party .label {
+  margin-bottom: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #666;
+}
+.doc-party strong { font-size: 14px; }
+
+.doc-lines { font-size: 12px; }
+.doc-lines th {
+  padding: 6px 8px;
+  border-top: 1px solid #111;
+  border-bottom: 1px solid #111;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.doc-lines td { padding: 5px 8px; border-bottom: 1px solid #e4e4e4; vertical-align: top; }
+.doc-lines .c-num, .doc-lines .c-qty { text-align: right; font-variant-numeric: tabular-nums; }
+.doc-lines .doc-empty { padding: 18px; text-align: center; color: #777; }
+
+.doc-foot {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 28px;
+  align-items: start;
+  padding-top: 14px;
+}
+.doc-words { display: flex; flex-direction: column; gap: 2px; max-width: 330px; }
+.doc-words .label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #666;
+}
+.doc-totals { width: auto; min-width: 250px; }
+.doc-totals th {
+  padding: 3px 16px 3px 0;
+  text-align: left;
+  font-weight: 500;
+  color: #444;
+}
+.doc-totals td {
+  padding: 3px 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.doc-totals .net th, .doc-totals .net td {
+  padding-top: 7px;
+  border-top: 1px solid #111;
+  font-size: 15px;
+  font-weight: 750;
+  color: #111;
+}
+
+.doc-signs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 26px;
+  margin-top: 44px;
+}
+.doc-sign { display: flex; flex-direction: column; gap: 3px; }
+.doc-sign .rule {
+  min-height: 20px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #111;
+  font-size: 12px;
+}
+.doc-sign .label { font-size: 10px; color: #666; }
+.doc-note { margin: 22px 0 0; font-size: 10.5px; color: #666; }
+
+/* A cancelled invoice must not be mistakable for a live one, on screen or on
+   paper. */
+.print-doc.cancelled::after {
+  content: "CANCELLED";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--display);
+  font-size: 90px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  color: rgb(220 38 38 / .13);
+  transform: rotate(-18deg);
+  pointer-events: none;
+}
 
 @media print {
   .sidebar, .topbar, .toolbar, .modal-foot, .toasts { display: none !important; }
   .page { padding: 0; overflow: visible; }
   .card { border: 0; box-shadow: none; }
   body, .shell { height: auto; overflow: visible; }
+
+  /* The document is the page: no card border, no rounding, and nothing else
+     from the screen goes with it. */
+  .print-doc {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .page:has(.print-doc) > :not(.print-doc) { display: none !important; }
+  .print-doc.cancelled::after { color: rgb(220 38 38 / .22); }
 }
 
 /* ----------------------------------------------------------- responsive -- */
