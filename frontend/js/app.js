@@ -8,6 +8,8 @@ import { setupSearch } from './omni.js';
 import * as home from './views/home.js';
 import * as dashboard from './views/dashboard.js';
 import * as maintenance from './views/maintenance.js';
+import * as purge from './views/purge.js';
+import * as codes from './views/codes.js';
 import * as stock from './views/stock.js';
 import * as customers from './views/customers.js';
 import * as suppliers from './views/suppliers.js';
@@ -42,15 +44,19 @@ const NAV = [
     { path: '/collections', label: 'Collections', icon: '₱', permission: 'collection:read' },
   ] },
   { group: 'Reports', items: [
-    { path: '/reports/aging', label: 'Accounts Receivable', icon: '⏱', permission: 'report:read' },
-    { path: '/reports/sales', label: 'Sales Summary', icon: '↗', permission: 'report:read' },
+    { path: '/reports/price-inquiry', label: 'Price Inquiry', icon: '₱', permission: 'report:read' },
     { path: '/reports/inventory', label: 'Inventory', icon: '≡', permission: 'report:read' },
-    { path: '/reports/expiring', label: 'Expiry & Alerts', icon: '⚑', permission: 'report:read' },
+    { path: '/reports/sales', label: 'Sales Summary', icon: '↗', permission: 'report:read' },
+    { path: '/reports/purchases', label: 'Purchase Summary', icon: '⇩', permission: 'report:read' },
+    { path: '/reports/aging', label: 'Accounts Receivable', icon: '⏱', permission: 'report:read' },
+    { path: '/reports/expiring', label: 'Expiration Inquiry', icon: '⚑', permission: 'report:read' },
     { path: '/overview', label: 'Overview', icon: '▤', permission: 'report:read' },
   ] },
   { group: 'Maintenance', items: [
-    { path: '/admin', label: 'Users & Audit', icon: '⚙', permission: 'admin:users' },
     { path: '/maintenance', label: 'Backup & Database', icon: '⛁', permission: 'maintenance:run' },
+    { path: '/maintenance/codes', label: 'Code Revisions', icon: '✎', permission: 'maintenance:run' },
+    { path: '/maintenance/purge', label: 'Purging of Records', icon: '⌫', permission: 'maintenance:run' },
+    { path: '/admin', label: 'Users & Audit', icon: '⚙', permission: 'admin:users' },
   ] },
 ];
 
@@ -115,6 +121,8 @@ function registerRoutes() {
   route('/', guard('report:read', home));
   route('/overview', guard('report:read', dashboard));
   route('/maintenance', guard('maintenance:run', maintenance));
+  route('/maintenance/purge', guard('maintenance:run', purge));
+  route('/maintenance/codes', guard('maintenance:run', codes));
   route('/stock', guard('stock:read', stock));
   route('/stock/:code', guard('stock:read', stock));
   route('/customers', guard('customer:read', customers));
@@ -257,6 +265,13 @@ export function changePassword(forced = false) {
 
 /* ----------------------------------------------------------------- boot -- */
 
+export async function signOut() {
+  closeAccountMenu();
+  try { await api.post('/logout'); } catch { /* signing out anyway */ }
+  session.user = null;
+  showLogin();
+}
+
 function closeAccountMenu() {
   const menu = $('#account-menu');
   if (menu && !menu.hidden) {
@@ -284,11 +299,7 @@ function wireChrome() {
     }
   });
 
-  $('#btn-logout').addEventListener('click', async () => {
-    try { await api.post('/logout'); } catch { /* signing out anyway */ }
-    session.user = null;
-    showLogin();
-  });
+  $('#btn-logout').addEventListener('click', signOut);
 
   $('#btn-password').addEventListener('click', () => {
     closeAccountMenu();

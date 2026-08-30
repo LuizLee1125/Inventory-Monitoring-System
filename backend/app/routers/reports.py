@@ -256,6 +256,125 @@ def collections_report(date_from: str = "", date_to: str = "",
             "totals": {"collected": round(sum(r["collected"] or 0 for r in rows), 2)}}
 
 
+@router.get("/price-inquiry")
+def price_inquiry(q: str = "", customer: str = "", limit: int = Query(50, le=200),
+                  _user: dict = Depends(require("report:read"))) -> dict:
+    """Price Inquiry — item N on the old Reports menu, and the lookup the
+    counter staff ran most often.
+
+    Shows all five tiers side by side with the margin each one earns, and if a
+    customer is named, which tier they are actually on.
+    """
+    tier = "A"
+    customer_row = None
+    if customer:
+        customer_row = db.query_one(
+            "SELECT code, name, price_cat, terms_text, terms_days, balance, credit_limit "
+            "FROM customers WHERE code = ?", (customer.upper(),))
+        if customer_row:
+            tier = (customer_row["price_cat"] or "A")[:1].upper()
+
+    column = {"A": "price_a", "B": "price_b", "C": "price_c",
+              "D": "price_d", "E": "price_e"}.get(tier, "price_a")
+
+    where = ["is_active = 1"]
+    params: list = []
+    if q:
+        term = f"%{q.strip().upper()}%"
+        where.append("(code LIKE ? OR name LIKE ?)")
+        params += [term, term]
+
+    rows = db.query(
+        f"SELECT code, name, unit, pack_qty, pack_unit, qty_on_hand, cost, "
+        f"price_a, price_b, price_c, price_d, price_e, lot_no, expiry_date, "
+        f"{column} AS their_price, "
+        f"CASE WHEN cost > 0 THEN ROUND(({column} - cost) * 100.0 / cost, 1) END "
+        f"  AS markup_pct, "
+        f"ROUND({column} - cost, 2) AS margin "
+        f"FROM stock WHERE {' AND '.join(where)} ORDER BY name LIMIT ?",
+        params + [limit])
+
+    return {"tier": tier, "customer": customer_row, "rows": rows}
+
+
+@router.get("/purchased-items")
+def purchased_items(date_from: str = "", date_to: str = "", supplier: str = "",
+                    limit: int = Query(300, le=2000),
+                    _user: dict = Depends(require("report:read"))) -> dict:
+    """Purchased Items — item U on the old menu: what was bought, by item
+    rather than by document."""
+    where = ["m.move_type = 'PURCHASE'", "m.doc_date BETWEEN ? AND ?"]
+    params: list = [date_from or "1900-01-01", date_to or "2999-12-31"]
+    if supplier:
+        where.append("m.supplier_code = ?")
+        params.append(supplier.upper())
+
+    rows = db.query(
+        f"""
+        SELECT m.stock_code, m.description, s.unit,
+               ROUND(SUM(m.qty), 2) AS quantity,
+               ROUND(SUM(m.line_total), 2) AS value,
+               ROUND(AVG(NULLIF(m.unit_cost, 0)), 2) AS avg_cost,
+               COUNT(DISTINCT m.doc_no) AS documents,
+               MAX(m.doc_date) AS last_bought,
+               s.qty_on_hand
+        FROM stock_moves m LEFT JOIN stock s ON s.code = m.stock_code
+        WHERE {' AND '.join(where)}
+        GROUP BY m.stock_code ORDER BY value DESC LIMIT ?
+        """, params + [limit])
+
+    return {"rows": rows,
+            "totals": {"value": round(sum(r["value"] or 0 for r in rows), 2),
+                       "items": len(rows)}}
+
+
+@router.get("/returns-summary")
+def returns_summary(date_from: str = "", date_to: str = "",
+                    group_by: str = "item",     # item | customer | month
+                    limit: int = Query(300, le=2000),
+                    _user: dict = Depends(require("report:read"))) -> dict:
+    """Sales Return Summary — item V on the old menu."""
+    date_from = date_from or "1900-01-01"
+    date_to = date_to or "2999-12-31"
+
+    if group_by == "item":
+        # Read the movement ledger rather than sales_return_lines: the legacy
+        # SRFYL held headers only, so for anything migrated the ledger is the
+        # only place the item detail exists. Returns raised here write both.
+        rows = db.query(
+            """
+            SELECT stock_code AS label, description AS detail,
+                   ROUND(SUM(qty), 2) AS quantity,
+                   ROUND(SUM(line_total), 2) AS value,
+                   COUNT(DISTINCT doc_no) AS documents
+            FROM stock_moves
+            WHERE move_type = 'RETURN' AND doc_date BETWEEN ? AND ?
+            GROUP BY stock_code ORDER BY value DESC LIMIT ?
+            """, (date_from, date_to, limit))
+    elif group_by == "customer":
+        rows = db.query(
+            """
+            SELECT customer_code AS label, customer_name AS detail,
+                   NULL AS quantity, ROUND(SUM(net_amount), 2) AS value,
+                   COUNT(*) AS documents
+            FROM sales_returns WHERE sr_date BETWEEN ? AND ?
+            GROUP BY customer_code ORDER BY value DESC LIMIT ?
+            """, (date_from, date_to, limit))
+    else:
+        rows = db.query(
+            """
+            SELECT substr(sr_date, 1, 7) AS label, '' AS detail,
+                   NULL AS quantity, ROUND(SUM(net_amount), 2) AS value,
+                   COUNT(*) AS documents
+            FROM sales_returns WHERE sr_date BETWEEN ? AND ?
+            GROUP BY label ORDER BY label DESC LIMIT ?
+            """, (date_from, date_to, limit))
+
+    return {"group_by": group_by, "rows": rows,
+            "totals": {"value": round(sum(r["value"] or 0 for r in rows), 2),
+                       "documents": sum(r["documents"] or 0 for r in rows)}}
+
+
 @router.get("/inactive-customers")
 def inactive_customers(months: int = 12,
                        _user: dict = Depends(require("report:read"))) -> list[dict]:

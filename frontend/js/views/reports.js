@@ -1,21 +1,27 @@
-// Reports: aging, sales, inventory, expiry and stock alerts.
+// The Reports column, carried over: price inquiry, inventory, sales, purchases,
+// purchased items, returns, receivables, collections and the stock alerts.
 
 import { api } from '../api.js';
 import {
-  card, clear, count, dataTable, date, el, money, monthsAgo, qty,
-  select, statusTag, today, toolbar,
+  attachLookup, card, clear, count, dataTable, date, debounce, el, money,
+  monthsAgo, qty, select, statusTag, today, toolbar,
 } from '../ui.js';
 import { setTitle } from '../app.js';
 
+// Named as they were on the DOS Reports column, so the office recognises them.
 const REPORTS = {
-  aging: 'AR Aging',
-  sales: 'Sales',
-  purchases: 'Purchases',
+  'price-inquiry': 'Price Inquiry',
   inventory: 'Inventory',
-  expiring: 'Expiry and stock alerts',
+  sales: 'Sales Summary',
+  purchases: 'Purchase Summary',
+  'purchased-items': 'Purchased Items',
+  'returns-summary': 'Sales Return Summary',
+  aging: 'Accounts Receivable',
+  collections: 'Collection Summary',
+  'inactive-customers': 'Inactive Customers',
+  expiring: 'Expiration Inquiry',
+  depleted: 'Depleted Stocks',
   movers: 'Fast and slow movers',
-  collections: 'Collections',
-  'inactive-customers': 'Inactive customers',
 };
 
 export async function render(container, params = {}) {
@@ -34,11 +40,15 @@ export async function render(container, params = {}) {
   container.append(bar, host);
 
   const renderers = {
+    'price-inquiry': priceInquiry,
     aging: agingReport,
     sales: salesReport,
     purchases: purchasesReport,
+    'purchased-items': purchasedItems,
+    'returns-summary': returnsSummary,
     inventory: inventoryReport,
     expiring: expiringReport,
+    depleted: depletedReport,
     movers: moversReport,
     collections: collectionsReport,
     'inactive-customers': inactiveReport,
@@ -67,6 +77,159 @@ function dateRange(onChange, fromDefault = monthsAgo(12)) {
 }
 
 /* -------------------------------------------------------------- reports -- */
+
+/** Price Inquiry — the counter lookup: five tiers side by side, and the one
+    this customer is actually on. */
+async function priceInquiry(host) {
+  const search = el('input', { placeholder: 'Item code or description…', style: 'min-width:240px' });
+  const customer = el('input', {
+    placeholder: 'Customer code (optional)', style: 'text-transform:uppercase;width:200px',
+  });
+  const note = el('div', { class: 'hint' });
+  const table = el('div');
+
+  host.append(
+    el('div', { class: 'toolbar' }, [
+      el('div', { class: 'search' }, [search]),
+      customer,
+      el('span', { class: 'spacer' }),
+    ]),
+    note,
+    el('div', { class: 'card', style: 'margin-top:14px' }, [table]),
+  );
+
+  attachLookup(customer, '/customers/lookup', {
+    format: (row) => row.name,
+    meta: (row) => `tier ${row.price_cat || 'A'}`,
+    onPick: () => draw(),
+  });
+  search.addEventListener('input', debounce(() => draw(), 250));
+  customer.addEventListener('change', () => draw());
+
+  async function draw() {
+    loading(table);
+    const data = await api.get('/reports/price-inquiry', {
+      q: search.value.trim(), customer: customer.value.trim(), limit: 60,
+    });
+
+    note.textContent = data.customer
+      ? `${data.customer.name} buys on tier ${data.tier}`
+        + `${data.customer.terms_days ? ` · ${data.customer.terms_days} day terms` : ''}`
+        + `${data.customer.balance ? ` · owes ${money(data.customer.balance)}` : ''}`
+      : 'No customer chosen — showing tier A as the selling price.';
+
+    clear(table);
+    table.append(dataTable([
+      { key: 'code', label: 'Code', class: 'mono' },
+      { key: 'name', label: 'Description', class: 'wrap' },
+      { key: 'unit', label: 'Unit' },
+      { key: 'qty_on_hand', label: 'On hand', align: 'right', render: (r) => qty(r.qty_on_hand) },
+      { key: 'cost', label: 'Cost', align: 'right', render: (r) => money(r.cost) },
+      { key: 'their_price', label: `Tier ${data.tier}`, align: 'right',
+        render: (r) => el('strong', { text: money(r.their_price) }) },
+      { key: 'margin', label: 'Margin', align: 'right',
+        render: (r) => el('span', { class: r.margin < 0 ? 'danger-text' : '', text: money(r.margin) }) },
+      { key: 'markup_pct', label: 'Mark-up', align: 'right',
+        render: (r) => (r.markup_pct === null ? '' : `${r.markup_pct}%`) },
+      { key: 'price_a', label: 'A', align: 'right', render: (r) => money(r.price_a) },
+      { key: 'price_b', label: 'B', align: 'right', render: (r) => money(r.price_b) },
+      { key: 'price_c', label: 'C', align: 'right', render: (r) => money(r.price_c) },
+      { key: 'price_d', label: 'D', align: 'right', render: (r) => money(r.price_d) },
+      { key: 'price_e', label: 'E', align: 'right', render: (r) => money(r.price_e) },
+    ], data.rows, {
+      onRowClick: (row) => { window.location.hash = `#/stock/${encodeURIComponent(row.code)}`; },
+      emptyText: 'Type part of a code or description to look up a price.',
+    }));
+  }
+
+  await draw();
+}
+
+async function purchasedItems(host) {
+  const range = dateRange(() => draw());
+  const table = el('div');
+  host.append(range.node, el('div', { class: 'card' }, [table]));
+
+  async function draw() {
+    loading(table);
+    const data = await api.get('/reports/purchased-items', {
+      date_from: range.from.value, date_to: range.to.value,
+    });
+    clear(table);
+    table.append(dataTable([
+      { key: 'stock_code', label: 'Code', class: 'mono' },
+      { key: 'description', label: 'Description', class: 'wrap' },
+      { key: 'quantity', label: 'Bought', align: 'right', render: (r) => qty(r.quantity) },
+      { key: 'unit', label: 'Unit' },
+      { key: 'avg_cost', label: 'Average cost', align: 'right', render: (r) => money(r.avg_cost) },
+      { key: 'value', label: 'Value', align: 'right', render: (r) => money(r.value) },
+      { key: 'documents', label: 'Docs', align: 'right', render: (r) => count(r.documents) },
+      { key: 'last_bought', label: 'Last bought', render: (r) => date(r.last_bought) },
+      { key: 'qty_on_hand', label: 'On hand', align: 'right', render: (r) => qty(r.qty_on_hand) },
+    ], data.rows, {
+      onRowClick: (row) => { window.location.hash = `#/stock/${encodeURIComponent(row.stock_code)}`; },
+      footer: { description: `${count(data.totals.items)} items`, value: money(data.totals.value) },
+      emptyText: 'Nothing was purchased in this period.',
+    }));
+  }
+
+  await draw();
+}
+
+async function returnsSummary(host) {
+  const groupBy = select('group_by', [
+    ['item', 'By item'], ['customer', 'By customer'], ['month', 'By month'],
+  ], 'item');
+  const range = dateRange(() => draw());
+  groupBy.addEventListener('change', () => draw());
+
+  const table = el('div');
+  host.append(el('div', { class: 'toolbar' }, [groupBy, range.node]),
+    el('div', { class: 'card' }, [table]));
+
+  async function draw() {
+    loading(table);
+    const data = await api.get('/reports/returns-summary', {
+      group_by: groupBy.value, date_from: range.from.value, date_to: range.to.value,
+    });
+    clear(table);
+    table.append(dataTable([
+      { key: 'label', label: groupBy.value === 'month' ? 'Month' : 'Code', class: 'mono' },
+      { key: 'detail', label: 'Description', class: 'wrap' },
+      { key: 'quantity', label: 'Quantity', align: 'right',
+        render: (r) => (r.quantity === null ? '' : qty(r.quantity)) },
+      { key: 'documents', label: 'Returns', align: 'right', render: (r) => count(r.documents) },
+      { key: 'value', label: 'Value', align: 'right', render: (r) => money(r.value) },
+    ], data.rows, {
+      footer: { detail: 'Total', documents: count(data.totals.documents),
+                value: money(data.totals.value) },
+      emptyText: 'No sales returns in this period.',
+    }));
+  }
+
+  await draw();
+}
+
+async function depletedReport(host) {
+  loading(host);
+  const rows = await api.get('/reports/depleted');
+  clear(host);
+  host.append(card('Depleted and below reorder point', dataTable([
+    { key: 'code', label: 'Code', class: 'mono' },
+    { key: 'name', label: 'Description', class: 'wrap' },
+    { key: 'division', label: 'Div' },
+    { key: 'qty_on_hand', label: 'On hand', align: 'right',
+      render: (r) => el('span', { class: r.qty_on_hand <= 0 ? 'danger-text' : 'warn-text',
+                                  text: qty(r.qty_on_hand) }) },
+    { key: 'reorder_point', label: 'Reorder at', align: 'right', render: (r) => qty(r.reorder_point) },
+    { key: 'reorder_qty', label: 'Order qty', align: 'right', render: (r) => qty(r.reorder_qty) },
+    { key: 'supplier_code', label: 'Supplier' },
+    { key: 'cost', label: 'Cost', align: 'right', render: (r) => money(r.cost) },
+  ], rows, {
+    onRowClick: (row) => { window.location.hash = `#/stock/${encodeURIComponent(row.code)}`; },
+    emptyText: 'Every item is above its reorder point.',
+  }), [], { flush: true }));
+}
 
 async function agingReport(host) {
   loading(host);

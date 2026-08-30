@@ -10,17 +10,22 @@
 
 import { api } from '../api.js';
 import { count, el, money, toast } from '../ui.js';
-import { can, changePassword, session, setTitle } from '../app.js';
+import { can, changePassword, session, setTitle, signOut } from '../app.js';
 
 // Tiles that run something instead of going somewhere.
 const ACTIONS = {
   password: () => changePassword(false),
+  signout: () => signOut(),
 };
 
 /* --------------------------------------------------------------- tiles --- */
 // `key` is the accelerator from the DOS menu, kept wherever the destination is
 // genuinely the same screen. `badge` names the counter this tile shows.
 
+// The keys are the ones the DOS menu used, item for item, so that muscle memory
+// still lands on the right screen. Two Maintenance slots have been reused:
+// 8 was "Archive Inquiry" and 9 "Set Printer Mode", neither of which survives
+// a system with no archive files and a browser print dialog.
 const COLUMNS = [
   {
     title: 'Transactions',
@@ -32,11 +37,11 @@ const COLUMNS = [
         desc: 'Accounts, terms and credit limits' },
       { key: 'C', label: 'Supplier File', path: '/suppliers', permission: 'supplier:read',
         desc: 'Suppliers and what is owed to them' },
-      { key: 'D', label: 'Invoices', path: '/invoices', permission: 'invoice:read',
+      { key: 'D', label: 'Invoice Maintenance', path: '/invoices', permission: 'invoice:read',
         desc: 'Raise and look up sales invoices', badge: 'open_invoices' },
-      { key: 'E', label: 'Purchases', path: '/purchases', permission: 'purchase:read',
+      { key: 'E', label: 'Purchase Invoice', path: '/purchases', permission: 'purchase:read',
         desc: 'Receive deliveries from suppliers' },
-      { key: 'F', label: 'Sales Returns', path: '/returns', permission: 'return:read',
+      { key: 'F', label: 'Sales Return', path: '/returns', permission: 'return:read',
         desc: 'Goods back, credit against the invoice' },
       { key: 'G', label: 'Collections', path: '/collections', permission: 'collection:read',
         desc: 'Payments applied to open invoices' },
@@ -46,21 +51,31 @@ const COLUMNS = [
     title: 'Reports',
     hint: 'What the numbers say',
     items: [
-      { key: 'W', label: 'Accounts Receivable', path: '/reports/aging', permission: 'report:read',
-        desc: 'Aging by customer and salesman', badge: 'overdue' },
-      { key: 'S', label: 'Sales Summary', path: '/reports/sales', permission: 'report:read',
-        desc: 'By month, customer, salesman or line' },
+      { key: 'N', label: 'Price Inquiry', path: '/reports/price-inquiry',
+        permission: 'report:read', desc: 'All five tiers, and this customer’s' },
+      { key: 'O', label: 'Stock Inquiry', path: '/stock', permission: 'stock:read',
+        desc: 'Search items and see the ledger' },
       { key: 'P', label: 'Inventory', path: '/reports/inventory', permission: 'report:read',
         desc: 'Valuation at cost, item by item' },
+      { key: 'Q', label: 'Customer List', path: '/customers', permission: 'customer:read',
+        desc: 'Balances, terms and salesmen' },
+      { key: 'R', label: 'Supplier List', path: '/suppliers', permission: 'supplier:read',
+        desc: 'Suppliers and payables' },
+      { key: 'S', label: 'Sales Summary', path: '/reports/sales', permission: 'report:read',
+        desc: 'By month, customer, salesman or line' },
       { key: 'T', label: 'Purchase Summary', path: '/reports/purchases', permission: 'report:read',
         desc: 'What was bought, and from whom' },
-      { key: 'X', label: 'Collection Summary', path: '/reports/collections', permission: 'report:read',
-        desc: 'Cash and cheques by month' },
-      { key: 'V', label: 'Expiry & Stock Alerts', path: '/reports/expiring', permission: 'report:read',
-        desc: 'Expiring, expired and depleted', badge: 'expiring' },
+      { key: 'U', label: 'Purchased Items', path: '/reports/purchased-items',
+        permission: 'report:read', desc: 'By item rather than by document' },
+      { key: 'V', label: 'Sales Return Summary', path: '/reports/returns-summary',
+        permission: 'return:read', desc: 'By item, customer or month' },
+      { key: 'W', label: 'Accounts Receivable', path: '/reports/aging', permission: 'report:read',
+        desc: 'Aging by customer and salesman', badge: 'overdue' },
+      { key: 'X', label: 'Collection Summary', path: '/reports/collections',
+        permission: 'report:read', desc: 'Cash and cheques by month' },
       { key: 'Y', label: 'Inactive Customers', path: '/reports/inactive-customers',
         permission: 'report:read', desc: 'No trade in twelve months' },
-      { key: 'O', label: 'Overview', path: '/overview', permission: 'report:read',
+      { key: 'Z', label: 'Overview', path: '/overview', permission: 'report:read',
         desc: 'Charts and recent activity' },
     ],
   },
@@ -68,11 +83,23 @@ const COLUMNS = [
     title: 'Maintenance',
     hint: 'Housekeeping',
     items: [
-      { key: '1', label: 'Users & Audit', path: '/admin', permission: 'admin:users',
+      { key: '1', label: 'Exit', action: 'signout', permission: 'report:read',
+        desc: 'Sign out of the system' },
+      { key: '2', label: 'Purging of Records', path: '/maintenance/purge',
+        permission: 'maintenance:run', desc: 'Remove settled history, if you want to' },
+      { key: '3', label: 'Code Revisions', path: '/maintenance/codes',
+        permission: 'maintenance:run', desc: 'Rename a code everywhere at once' },
+      { key: '4', label: 'Database Check', path: '/maintenance', permission: 'maintenance:run',
+        desc: 'The successor to ReIndex Files' },
+      { key: '5', label: 'Back-up Files', path: '/maintenance', permission: 'maintenance:run',
+        desc: 'Copy the database while people work', badge: 'backup_age' },
+      { key: '6', label: 'Expiration Inquiry', path: '/reports/expiring',
+        permission: 'report:read', desc: 'Expiring and expired lots', badge: 'expiring' },
+      { key: '7', label: 'Depleted Stocks', path: '/reports/depleted', permission: 'report:read',
+        desc: 'At or below the reorder point' },
+      { key: '8', label: 'Users & Audit', path: '/admin', permission: 'admin:users',
         desc: 'Accounts, roles, who did what', badge: 'users' },
-      { key: '2', label: 'Backup & Database', path: '/maintenance', permission: 'maintenance:run',
-        desc: 'Take a backup, check the database', badge: 'backup_age' },
-      { key: '3', label: 'Change Password', action: 'password', permission: 'report:read',
+      { key: '9', label: 'Change Password', action: 'password', permission: 'report:read',
         desc: 'Choose a new one for this account' },
     ],
   },

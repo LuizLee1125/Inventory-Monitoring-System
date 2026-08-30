@@ -31,7 +31,9 @@ Data       Migrated from 67 legacy .DBF tables: 1,735 customers, 2,137 stock ite
   invoices at once and takes you to the record — the DOS system made you pick the right screen
   first.
 - **Light by default**, dark when the operating system asks for it, and a print stylesheet for
-  invoices and reports.
+  invoices and reports. The palette, radii, shadows and the Manrope/Inter pairing are taken from
+  `NTC-TMS-Tauri` so the two applications read as one family; the fonts load from Google Fonts with
+  a full system fallback, since this server often runs on a LAN with no route out.
 
 ---
 
@@ -302,10 +304,26 @@ permissions allow:
 
 ### Reports
 
-AR aging (current / 31-60 / 61-90 / over 90, by customer and salesman) · Sales (by month, customer,
-salesman, division or category) · Purchases by supplier · Inventory valuation · Expiring and expired
-stock · Depleted and below reorder point · Fast and slow movers · Collections by month and method ·
-Inactive customers.
+The DOS Reports column, item for item, keeping its letters:
+
+| Key | Report | What it gives you |
+| --- | --- | --- |
+| N | Price Inquiry | All five tiers side by side with cost, margin and mark-up; name a customer and it shows the tier they actually buy on |
+| O | Stock Inquiry | Search items, see the movement ledger |
+| P | Inventory | Valuation at cost, item by item |
+| Q | Customer List | Balances, terms, salesmen |
+| R | Supplier List | Suppliers and payables |
+| S | Sales Summary | By month, customer, salesman, division or category |
+| T | Purchase Summary | By supplier |
+| U | Purchased Items | By item rather than by document, with average cost and last bought |
+| V | Sales Return Summary | By item, customer or month |
+| W | Accounts Receivable | Aging: current / 31-60 / 61-90 / over 90 |
+| X | Collection Summary | Cash and cheques by month |
+| Y | Inactive Customers | No trade in twelve months |
+| Z | Overview | Charts and recent activity (new — the character menu had no equivalent) |
+
+Plus fast and slow movers, and the two stock alerts that sat under Maintenance in the original
+(Expiration Inquiry and Depleted Stocks).
 
 Every report prints from the browser with a dedicated print stylesheet.
 
@@ -325,6 +343,22 @@ Neither restriction survives:
 | Compact | Reclaims free pages by rewriting the file. Needs as much spare disk as the database occupies; do it out of hours. |
 
 A backup on the same disk does not survive that disk failing — copy them off the machine as well.
+
+**Code Revisions** (item 3) — renaming a stock, customer or supplier code used to mean editing the
+master file and then every detail file that referenced it, with orphaned rows left behind if it was
+interrupted. Here it is one transaction across all of them: the screen first shows how many rows the
+rename would touch (a busy stock code reaches ~25,000), then moves them together or not at all.
+
+**Purging of Records** (item 2) — the original purged because `.DBF` files grew until the machine
+struggled. This database holds 2.5 million movements in one file without difficulty, so purging is
+now a choice rather than a chore, and most offices will never need it. When you do: pick a cut-off,
+see exactly what would go, and confirm by typing `PURGE`. Only fully paid invoices, posted
+collections and their movements are removed — anything still owed or cancelled is always kept — and
+it refuses to run at all unless a backup exists on disk.
+
+Two items from the original column are gone rather than reimplemented: **Set Printer Mode**, because
+printing is now the browser's own dialog, and **Archive Inquiry**, because there are no archive
+files to inquire into. Their slots (8 and 9) carry Users & Audit and Change Password instead.
 
 ---
 
@@ -438,7 +472,7 @@ The API is self-documenting: with the server running, open **`/api/docs`**.
 | Collections | `GET /api/collections`, `/{id}`, `/open-invoices/{customer}`, `POST`, `POST /{id}/reverse` |
 | Reports | `/api/reports/dashboard`, `aging`, `sales`, `purchases`, `inventory`, `expiring`, `depleted`, `movers`, `collections`, `inactive-customers` |
 | Admin | `/api/admin/users`, `roles`, `sessions`, `audit`, `stats` |
-| Maintenance | `GET /api/maintenance/status`, `POST /api/maintenance/backup`, `check`, `compact` |
+| Maintenance | `GET /api/maintenance/status`, `code-usage`, `purge-preview`; `POST /api/maintenance/backup`, `check`, `compact`, `code-revision`, `purge` |
 
 ---
 
@@ -481,6 +515,8 @@ frontend/               browser application, no build step
     views/
       home.js           the role-aware launcher that replaces the DOS main menu
       maintenance.js    backup and database housekeeping
+      codes.js          code revisions
+      purge.js          purging of records
       …                 one module per remaining screen
 
 database/               ims.sqlite and backups/ (both gitignored)
