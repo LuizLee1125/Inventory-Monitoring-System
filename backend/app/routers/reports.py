@@ -31,6 +31,17 @@ def dashboard(_user: dict = Depends(require("report:read"))) -> dict:
         "FROM invoices WHERE status <> 'CANCELLED' "
         "AND inv_date >= date('now', 'start of month')") or {}
 
+    # What has actually happened today - the first thing anyone opening the
+    # system in the morning wants to know.
+    today = {
+        **(db.query_one(
+            "SELECT COUNT(*) AS invoices, ROUND(COALESCE(SUM(net_amount), 0), 2) AS sales "
+            "FROM invoices WHERE inv_date = date('now') AND status <> 'CANCELLED'") or {}),
+        **(db.query_one(
+            "SELECT COUNT(*) AS payments, ROUND(COALESCE(SUM(net_amount), 0), 2) AS collected "
+            "FROM collections WHERE col_date = date('now') AND status <> 'REVERSED'") or {}),
+    }
+
     year = db.query_one(
         "SELECT ROUND(SUM(net_amount), 2) AS sales FROM invoices "
         "WHERE status <> 'CANCELLED' AND inv_date >= date('now', 'start of year')") or {}
@@ -70,6 +81,7 @@ def dashboard(_user: dict = Depends(require("report:read"))) -> dict:
     return {
         "receivable": receivable,
         "month": month,
+        "today": today,
         "year": year,
         "stock": stock,
         "sales_trend": trend,
@@ -116,10 +128,29 @@ def aging(salesman: str = "", min_balance: float = 0.005,
         ORDER BY total DESC LIMIT ?
         """, params + [page_size])
 
-    totals = {key: round(sum(r[key] or 0 for r in rows), 2)
-              for key in ("current", "bucket1", "bucket2", "bucket3", "total")}
+    # Totalled over every matching invoice, not just the page that was asked
+    # for. Summing `rows` made the footer shrink as the limit shrank, which is
+    # exactly the number nobody wants to be wrong.
+    totals = db.query_one(
+        f"""
+        SELECT
+          ROUND(SUM(CASE WHEN julianday('now') - julianday(i.inv_date) <= {B1}
+                    THEN i.balance ELSE 0 END), 2) AS current,
+          ROUND(SUM(CASE WHEN julianday('now') - julianday(i.inv_date) > {B1}
+                     AND julianday('now') - julianday(i.inv_date) <= {B2}
+                    THEN i.balance ELSE 0 END), 2) AS bucket1,
+          ROUND(SUM(CASE WHEN julianday('now') - julianday(i.inv_date) > {B2}
+                     AND julianday('now') - julianday(i.inv_date) <= {B3}
+                    THEN i.balance ELSE 0 END), 2) AS bucket2,
+          ROUND(SUM(CASE WHEN julianday('now') - julianday(i.inv_date) > {B3}
+                    THEN i.balance ELSE 0 END), 2) AS bucket3,
+          ROUND(SUM(i.balance), 2) AS total,
+          COUNT(DISTINCT i.customer_code) AS customers
+        FROM invoices i WHERE {clause}
+        """, params) or {}
+
     return {"buckets": [f"Current ({B1} days)", f"{B1}-{B2}", f"{B2}-{B3}", f"Over {B3}"],
-            "rows": rows, "totals": totals}
+            "rows": rows, "totals": totals, "shown": len(rows)}
 
 
 @router.get("/sales")

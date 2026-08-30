@@ -100,6 +100,9 @@ export function page() { return $('#page'); }
 function mount(view, params) {
   const container = page();
   clear(container);
+  // Only the home screen pins itself to the viewport; every other screen
+  // scrolls normally.
+  container.classList.remove('home-fit');
   highlightNav();
   Promise.resolve(view.render(container, params)).catch(reportError);
 }

@@ -327,7 +327,7 @@ a { color: var(--primary); }
 .omni input {
   width: 100%;
   height: 38px;
-  padding: 0 62px 0 38px;
+  padding: 0 16px 0 38px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: var(--surface-2);
@@ -340,21 +340,6 @@ a { color: var(--primary); }
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
-.omni-hint {
-  position: absolute;
-  right: 11px;
-  padding: 2px 6px;
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  background: var(--surface);
-  color: var(--text-faint);
-  font-family: var(--sans);
-  font-size: 10.5px;
-  font-weight: 600;
-  pointer-events: none;
-}
-.omni input:focus ~ .omni-hint { display: none; }
-
 .omni-results {
   position: absolute;
   top: calc(100% + 8px);
@@ -538,6 +523,159 @@ a { color: var(--primary); }
 .stat.ok .value { color: var(--ok); }
 
 /* ---------------------------------------------------------------- home -- */
+/* One screen, no scrolling. The page becomes a fixed-height column: heading
+   and figures take what they need, the three panels share the rest, and each
+   panel clips its own list rather than pushing the page taller. */
+
+.page.home-fit {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow: hidden;
+  padding-bottom: 26px;
+}
+.page.home-fit > .home-panels { flex: 1; min-height: 0; }
+
+.home-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  flex: none;
+}
+.home-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 15px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+}
+.home-kpi:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.home-kpi .value {
+  font-size: 24px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.025em;
+  line-height: 1.15;
+}
+.home-kpi .label { font-size: 12.5px; font-weight: 500; color: var(--text-dim); }
+.home-kpi .sub { font-size: 11.5px; color: var(--text-faint); }
+.home-kpi.danger .value { color: var(--danger); }
+.home-kpi.warn .value { color: var(--warn); }
+.home-kpi.ok .value { color: var(--ok); }
+
+.home-panels {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.home-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.home-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex: none;
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid var(--border);
+}
+.home-panel-head h3 {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.home-panel-hint { font-size: 11.5px; color: var(--text-faint); }
+
+.home-panel-body { flex: 1; min-height: 0; overflow: hidden; }
+
+/* Two figures at the top of each panel. */
+.home-mini {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.home-mini-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 11px 16px;
+  background: var(--surface);
+}
+.home-mini-item .label {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.home-mini-item .value {
+  font-size: 16px;
+  font-weight: 660;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.015em;
+}
+.home-mini-item .sub { font-size: 11px; color: var(--text-faint); }
+.home-mini-item.danger .value { color: var(--danger); }
+.home-mini-item.warn .value { color: var(--warn); }
+.home-mini-item.ok .value { color: var(--ok); }
+
+.home-list { list-style: none; margin: 0; padding: 0; }
+.home-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+  color: inherit;
+  font-size: 12.5px;
+}
+.home-row:hover { background: var(--surface-2); }
+.home-row .r-code {
+  flex: none;
+  min-width: 74px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--primary);
+}
+.home-row .r-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-row .r-value {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 550;
+}
+
+.home-empty { padding: 22px 16px; text-align: center; color: var(--text-faint); font-size: 12.5px; }
+
+/* Below this the three panels cannot hold their content side by side, so the
+   home screen gives up on fitting and scrolls like every other page. */
+@media (max-width: 1100px), (max-height: 620px) {
+  .page.home-fit { overflow-y: auto; }
+  .home-panels { grid-template-columns: 1fr; }
+  .home-kpis { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* The successor to the DOS main menu. Three panels, because that grouping is
    how the office has thought about the work since 1999, and the same letter
    keys, because pressing G for Collections is muscle memory. */
@@ -568,162 +706,6 @@ a { color: var(--primary); }
 
 /* A single quiet strip of what needs attention — the thing the character-mode
    menu could never do. */
-/* Four separate cards, figure first — same shape as the stat tiles used
-   everywhere else, so the home screen and the reports read as one system. */
-.attention {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 14px;
-  margin-bottom: 24px;
-}
-.attention-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 18px 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  text-decoration: none;
-  color: inherit;
-}
-.attention-item:hover { border-color: var(--border-strong); background: var(--surface-2); }
-.attention-value {
-  order: 1;
-  font-size: 27px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -.025em;
-  line-height: 1.15;
-}
-.attention-label {
-  order: 2;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-dim);
-}
-.attention-note { order: 3; margin-top: 2px; font-size: 12px; color: var(--text-faint); }
-.attention-item.bad .attention-value { color: var(--danger); }
-.attention-item.warn .attention-value { color: var(--warn); }
-.attention-item.good .attention-value { color: var(--ok); }
-
-.menu-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-  gap: 18px;
-  align-items: start;
-}
-
-.menu-panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-}
-.menu-panel-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 13px 16px 12px;
-  border-bottom: 1px solid var(--border);
-}
-.menu-panel-head h3 {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: var(--primary);
-}
-.menu-panel-hint { font-size: 12px; color: var(--text-faint); }
-
-.menu-items { display: flex; flex-direction: column; }
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  text-decoration: none;
-  color: inherit;
-  border-bottom: 1px solid var(--border);
-}
-.menu-item:last-child { border-bottom: 0; }
-.menu-item:hover { background: var(--surface-2); }
-.menu-item:hover .menu-key {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-}
-.menu-item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
-
-/* The accelerator, carried over from the DOS menu and still live. */
-.menu-key {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 25px;
-  height: 25px;
-  border: 1px solid var(--border-strong);
-  border-bottom-width: 2px;
-  border-radius: 5px;
-  background: var(--surface-2);
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-dim);
-  transition: background .12s, color .12s, border-color .12s;
-}
-
-.menu-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.menu-label { font-size: 13.5px; font-weight: 570; }
-.menu-desc {
-  font-size: 11.5px;
-  color: var(--text-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.menu-badge {
-  margin-left: auto;
-  flex: none;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  font-size: 10.5px;
-  font-weight: 650;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-.menu-badge.warn { background: var(--warn-soft); color: var(--warn); }
-.menu-badge.bad { background: var(--danger-soft); color: var(--danger); }
-.menu-badge.good { background: var(--ok-soft); color: var(--ok); }
-
-/* Brief flash when a key is pressed, so the accelerator is visibly the thing
-   that acted. */
-.menu-item.firing { background: var(--primary-soft); }
-.menu-item.firing .menu-key {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-}
-
-.menu-foot {
-  margin: 20px 0 0;
-  font-size: 12px;
-  color: var(--text-faint);
-}
-.menu-foot kbd {
-  padding: 1px 6px;
-  border: 1px solid var(--border-strong);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  background: var(--surface);
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
 .plain-list {
   margin: 0;
   padding-left: 18px;
@@ -811,6 +793,9 @@ table.grid td.wrap { white-space: normal; min-width: 220px; }
   font-weight: 550;
   cursor: pointer;
   white-space: nowrap;
+  /* Several buttons are anchors — New invoice, Open customer, Print — and
+     without this they inherit the underline from the link rule above. */
+  text-decoration: none;
 }
 .btn:hover { background: var(--surface-2); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -1046,8 +1031,6 @@ input.num { text-align: right; font-variant-numeric: tabular-nums; }
     padding: 0 12px;
   }
   .topbar h2 { display: none; }
-  .omni-hint { display: none; }
-  .omni input { padding-right: 14px; }
   .page { padding: 18px 16px 32px; }
   .home-title { font-size: 24px; }
   .home-head { align-items: flex-start; }

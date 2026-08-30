@@ -1,364 +1,299 @@
-// The home screen: the successor to the DOS main menu.
+// Home — one screen, no scrolling.
 //
-// The three columns are kept — Transactions, Reports, Maintenance — because
-// after twenty-five years that grouping is how the office thinks about the
-// work. So are the letter keys: pressing G for Collections is muscle memory
-// for people who have done it every working day since 1999, and it still
-// works here. Everything else is new: live counts on the tiles that have
-// something to say, so the menu can tell you what needs attention before you
-// open anything.
+// The DOS main menu was a list of twenty-nine places to go. A screen that can
+// show live data should not spend itself on a second copy of the sidebar, so
+// this shows the state of the business instead: what happened today, who owes
+// the most, and whether the system itself is healthy — one panel for each of
+// the three columns the office knows.
+//
+// The letter keys survive. They are bound to every destination the old menu
+// reached, whether or not it is drawn here, because pressing G for Collections
+// is muscle memory. Each panel shows a few of them so they stay discoverable.
 
 import { api } from '../api.js';
 import { count, el, money, toast } from '../ui.js';
 import { can, changePassword, session, setTitle, signOut } from '../app.js';
 
-// Tiles that run something instead of going somewhere.
 const ACTIONS = {
   password: () => changePassword(false),
   signout: () => signOut(),
 };
 
-/* --------------------------------------------------------------- tiles --- */
-// `key` is the accelerator from the DOS menu, kept wherever the destination is
-// genuinely the same screen. `badge` names the counter this tile shows.
-
-// The keys are the ones the DOS menu used, item for item, so that muscle memory
-// still lands on the right screen. Two Maintenance slots have been reused:
-// 8 was "Archive Inquiry" and 9 "Set Printer Mode", neither of which survives
-// a system with no archive files and a browser print dialog.
-const COLUMNS = [
-  {
-    title: 'Transactions',
-    hint: 'The day-to-day work',
-    items: [
-      { key: 'A', label: 'Stock File', path: '/stock', permission: 'stock:read',
-        desc: 'Items, prices, lots and expiry', badge: 'stock_alerts' },
-      { key: 'B', label: 'Customer File', path: '/customers', permission: 'customer:read',
-        desc: 'Accounts, terms and credit limits' },
-      { key: 'C', label: 'Supplier File', path: '/suppliers', permission: 'supplier:read',
-        desc: 'Suppliers and what is owed to them' },
-      { key: 'D', label: 'Invoice Maintenance', path: '/invoices', permission: 'invoice:read',
-        desc: 'Raise and look up sales invoices', badge: 'open_invoices' },
-      { key: 'E', label: 'Purchase Invoice', path: '/purchases', permission: 'purchase:read',
-        desc: 'Receive deliveries from suppliers' },
-      { key: 'F', label: 'Sales Return', path: '/returns', permission: 'return:read',
-        desc: 'Goods back, credit against the invoice' },
-      { key: 'G', label: 'Collections', path: '/collections', permission: 'collection:read',
-        desc: 'Payments applied to open invoices' },
-      { key: 'H', label: 'Archived Records', path: '/archive', permission: 'report:read',
-        desc: 'Documents purged out of the working files', badge: 'archive' },
-    ],
-  },
-  {
-    title: 'Reports',
-    hint: 'What the numbers say',
-    items: [
-      { key: 'N', label: 'Price Inquiry', path: '/reports/price-inquiry',
-        permission: 'report:read', desc: 'All five tiers, and this customer’s' },
-      { key: 'O', label: 'Stock Inquiry', path: '/stock', permission: 'stock:read',
-        desc: 'Search items and see the ledger' },
-      { key: 'P', label: 'Inventory', path: '/reports/inventory', permission: 'report:read',
-        desc: 'Valuation at cost, item by item' },
-      { key: 'Q', label: 'Customer List', path: '/customers', permission: 'customer:read',
-        desc: 'Balances, terms and salesmen' },
-      { key: 'R', label: 'Supplier List', path: '/suppliers', permission: 'supplier:read',
-        desc: 'Suppliers and payables' },
-      { key: 'S', label: 'Sales Summary', path: '/reports/sales', permission: 'report:read',
-        desc: 'By month, customer, salesman or line' },
-      { key: 'T', label: 'Purchase Summary', path: '/reports/purchases', permission: 'report:read',
-        desc: 'What was bought, and from whom' },
-      { key: 'U', label: 'Purchased Items', path: '/reports/purchased-items',
-        permission: 'report:read', desc: 'By item rather than by document' },
-      { key: 'V', label: 'Sales Return Summary', path: '/reports/returns-summary',
-        permission: 'return:read', desc: 'By item, customer or month' },
-      { key: 'W', label: 'Accounts Receivable', path: '/reports/aging', permission: 'report:read',
-        desc: 'Aging by customer and salesman', badge: 'overdue' },
-      { key: 'X', label: 'Collection Summary', path: '/reports/collections',
-        permission: 'report:read', desc: 'Cash and cheques by month' },
-      { key: 'Y', label: 'Inactive Customers', path: '/reports/inactive-customers',
-        permission: 'report:read', desc: 'No trade in twelve months' },
-      { key: 'Z', label: 'Overview', path: '/overview', permission: 'report:read',
-        desc: 'Charts and recent activity' },
-    ],
-  },
-  {
-    title: 'Maintenance',
-    hint: 'Housekeeping',
-    items: [
-      { key: '1', label: 'Exit', action: 'signout', permission: 'report:read',
-        desc: 'Sign out of the system' },
-      { key: '2', label: 'Purging of Records', path: '/maintenance/purge',
-        permission: 'maintenance:run', desc: 'Remove settled history, if you want to' },
-      { key: '3', label: 'Users & Audit', path: '/admin', permission: 'admin:users',
-        desc: 'Accounts, roles, who did what', badge: 'users' },
-      { key: '4', label: 'ReIndex Files', path: '/maintenance', permission: 'maintenance:run',
-        desc: 'Verify the database and refresh statistics' },
-      { key: '5', label: 'Back-up Files', path: '/maintenance', permission: 'maintenance:run',
-        desc: 'Copy the database while people work', badge: 'backup_age' },
-      { key: '6', label: 'Expiration Inquiry', path: '/reports/expiring',
-        permission: 'report:read', desc: 'Expiring and expired lots', badge: 'expiring' },
-      { key: '7', label: 'Depleted Stocks', path: '/reports/depleted', permission: 'report:read',
-        desc: 'At or below the reorder point' },
-      { key: '8', label: 'Archive Inquiry', path: '/archive/summary', permission: 'report:read',
-        desc: 'What the archive holds, year by year' },
-      { key: '9', label: 'Change Password', action: 'password', permission: 'report:read',
-        desc: 'Choose a new one for this account' },
-    ],
-  },
+// Every destination the DOS menu had, on the key it had. Not all are drawn.
+const SHORTCUTS = [
+  { key: 'A', label: 'Stock File', path: '/stock', permission: 'stock:read' },
+  { key: 'B', label: 'Customer File', path: '/customers', permission: 'customer:read' },
+  { key: 'C', label: 'Supplier File', path: '/suppliers', permission: 'supplier:read' },
+  { key: 'D', label: 'Invoices', path: '/invoices', permission: 'invoice:read' },
+  { key: 'E', label: 'Purchases', path: '/purchases', permission: 'purchase:read' },
+  { key: 'F', label: 'Sales Returns', path: '/returns', permission: 'return:read' },
+  { key: 'G', label: 'Collections', path: '/collections', permission: 'collection:read' },
+  { key: 'H', label: 'Archived Records', path: '/archive', permission: 'report:read' },
+  { key: 'N', label: 'Price Inquiry', path: '/reports/price-inquiry', permission: 'report:read' },
+  { key: 'O', label: 'Stock Inquiry', path: '/stock', permission: 'stock:read' },
+  { key: 'P', label: 'Inventory', path: '/reports/inventory', permission: 'report:read' },
+  { key: 'Q', label: 'Customer List', path: '/customers', permission: 'customer:read' },
+  { key: 'R', label: 'Supplier List', path: '/suppliers', permission: 'supplier:read' },
+  { key: 'S', label: 'Sales Summary', path: '/reports/sales', permission: 'report:read' },
+  { key: 'T', label: 'Purchase Summary', path: '/reports/purchases', permission: 'report:read' },
+  { key: 'U', label: 'Purchased Items', path: '/reports/purchased-items', permission: 'report:read' },
+  { key: 'V', label: 'Return Summary', path: '/reports/returns-summary', permission: 'return:read' },
+  { key: 'W', label: 'Receivables', path: '/reports/aging', permission: 'report:read' },
+  { key: 'X', label: 'Collection Summary', path: '/reports/collections', permission: 'report:read' },
+  { key: 'Y', label: 'Inactive Customers', path: '/reports/inactive-customers', permission: 'report:read' },
+  { key: 'Z', label: 'Overview', path: '/overview', permission: 'report:read' },
+  { key: '1', label: 'Exit', action: 'signout', permission: 'report:read' },
+  { key: '2', label: 'Purging of Records', path: '/maintenance/purge', permission: 'maintenance:run' },
+  { key: '3', label: 'Users & Audit', path: '/admin', permission: 'admin:users' },
+  { key: '4', label: 'ReIndex Files', path: '/maintenance', permission: 'maintenance:run' },
+  { key: '5', label: 'Back-up Files', path: '/maintenance', permission: 'maintenance:run' },
+  { key: '6', label: 'Expiration Inquiry', path: '/reports/expiring', permission: 'report:read' },
+  { key: '7', label: 'Depleted Stocks', path: '/reports/depleted', permission: 'report:read' },
+  { key: '8', label: 'Archive Inquiry', path: '/archive/summary', permission: 'report:read' },
+  { key: '9', label: 'Change Password', action: 'password', permission: 'report:read' },
 ];
 
-/* ----------------------------------------------------------- role focus -- */
-// Filtering the same menu by permission would give the invoicing clerk and the
-// AR officer near-identical screens, because both can read everything. The DOS
-// system did not work that way - MNUNVCS and MNUAR were different menus - so
-// each role gets the one action it performs all day put up front, and its own
-// tiles floated to the top of the column.
-
-const ROLE_FOCUS = {
-  admin: {
-    lead: 'Everything is here. The keys are the ones you already know.',
-  },
-  manager: {
-    lead: 'The whole system, minus user administration.',
-    action: { label: 'Open accounts receivable', path: '/reports/aging',
-              permission: 'report:read' },
-    first: ['W', 'A', 'D'],
-  },
-  invoicing: {
-    lead: 'Invoicing and the customer file.',
-    action: { label: 'Raise an invoice', path: '/invoices/new',
-              permission: 'invoice:write' },
-    first: ['D', 'B', 'F'],
-  },
-  ar: {
-    lead: 'Collections and what is still owed.',
-    action: { label: 'Record a payment', path: '/collections/new',
-              permission: 'collection:write' },
-    first: ['G', 'B', 'D'],
-  },
-  sales: {
-    lead: 'Prices, stock on hand and your customers.',
-    action: { label: 'Look up an item', path: '/stock', permission: 'stock:read' },
-    first: ['A', 'B', 'D'],
-  },
-  inventory: {
-    lead: 'Stock, purchasing and the supplier file.',
-    action: { label: 'Receive a delivery', path: '/purchases/new',
-              permission: 'purchase:write' },
-    first: ['A', 'E', 'C'],
-  },
-  viewer: { lead: 'Read-only access.' },
+const ROLE_LEAD = {
+  admin: 'Everything is here.',
+  manager: 'The whole system, minus user administration.',
+  invoicing: 'Invoicing and the customer file.',
+  ar: 'Collections and what is still owed.',
+  sales: 'Prices, stock on hand and your customers.',
+  inventory: 'Stock, purchasing and the supplier file.',
+  viewer: 'Read-only access.',
 };
 
-function focusFor() {
-  return ROLE_FOCUS[session.user.role] || {};
-}
-
-/** Float the role's daily tiles to the top of their column, order preserved. */
-function ordered(items, first) {
-  if (!first?.length) return items;
-  const rank = (item) => {
-    const i = first.indexOf(item.key);
-    return i === -1 ? first.length : i;
-  };
-  return [...items].sort((a, b) => rank(a) - rank(b));
-}
+const PRIMARY = {
+  manager: { label: 'Open receivables', path: '/reports/aging', permission: 'report:read' },
+  invoicing: { label: 'Raise an invoice', path: '/invoices/new', permission: 'invoice:write' },
+  ar: { label: 'Record a payment', path: '/collections/new', permission: 'collection:write' },
+  sales: { label: 'Look up an item', path: '/stock', permission: 'stock:read' },
+  inventory: { label: 'Receive a delivery', path: '/purchases/new', permission: 'purchase:write' },
+};
 
 /* --------------------------------------------------------------- render -- */
 
 export async function render(container) {
   setTitle('Home');
   detachShortcuts?.();
+  container.classList.add('home-fit');
 
-  const [dash, admin, arc] = await Promise.all([
+  const [dash, aging, maint, admin] = await Promise.all([
     api.get('/reports/dashboard'),
-    can('admin:users') ? api.get('/admin/stats').catch(() => null) : Promise.resolve(null),
-    api.get('/archive/summary').catch(() => null),
+    can('report:read') ? api.get('/reports/aging', { page_size: 10 }).catch(() => null) : null,
+    can('maintenance:run') ? api.get('/maintenance/status').catch(() => null) : null,
+    can('admin:users') ? api.get('/admin/stats').catch(() => null) : null,
   ]);
-  const maint = can('maintenance:run')
-    ? await api.get('/maintenance/status').catch(() => null)
-    : null;
-
-  const badges = buildBadges(dash, admin, maint, arc);
-  const focus = focusFor();
-  const columns = COLUMNS
-    .map((column) => ({
-      ...column,
-      items: ordered(column.items.filter((i) => can(i.permission)), focus.first),
-    }))
-    .filter((column) => column.items.length);
-
-  // Accelerators are only bound to tiles this person can actually reach.
-  const shortcuts = new Map();
-  for (const column of columns) {
-    for (const item of column.items) shortcuts.set(item.key, item);
-  }
 
   container.append(
-    greeting(dash, focus),
-    attention(dash),
-    el('div', { class: 'menu-grid' }, columns.map((column) => panel(column, badges))),
-    el('p', { class: 'menu-foot' }, [
-      'Press a letter or number to open a screen — the same keys as the old system. ',
-      el('kbd', { text: '?' }), ' lists them.',
-    ]),
+    greeting(dash),
+    kpis(dash),
+    el('div', { class: 'home-panels' }, [
+      transactionsPanel(dash),
+      reportsPanel(dash, aging),
+      maintenancePanel(dash, maint, admin),
+    ].filter(Boolean)),
   );
 
-  bindShortcuts(container, shortcuts);
+  bindShortcuts();
 }
 
-function greeting(dash, focus) {
+/* -------------------------------------------------------------- heading -- */
+
+function greeting(dash) {
   const hour = new Date().getHours();
   const part = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const name = (session.user.full_name || session.user.username).split(' ')[0];
   const role = session.meta?.roles?.[session.user.role]?.label || session.user.role;
-  const action = focus.action && can(focus.action.permission) ? focus.action : null;
+  const t = dash.today || {};
+  const primary = PRIMARY[session.user.role];
 
   return el('header', { class: 'home-head' }, [
     el('div', {}, [
       el('p', { class: 'home-eyebrow', text: new Date().toLocaleDateString(undefined,
         { weekday: 'long', month: 'long', day: 'numeric' }) }),
       el('h2', { class: 'home-title', text: `${part}, ${name}.` }),
-      el('p', { class: 'home-sub' },
-        [`${role}. ${focus.lead || ''} `,
-         `${count(dash.receivable?.open_invoices || 0)} invoices are still open.`]),
+      el('p', { class: 'home-sub' }, [
+        `${role}. ${ROLE_LEAD[session.user.role] || ''} `,
+        t.invoices
+          ? `${count(t.invoices)} invoices and ${money(t.collected)} collected so far today.`
+          : 'Nothing has been raised yet today.',
+      ]),
     ]),
     el('div', { class: 'home-right' }, [
-      action
-        ? el('a', { class: 'btn primary', href: `#${action.path}`, text: action.label })
+      can('invoice:write')
+        ? el('a', { class: 'btn', href: '#/invoices/new', text: 'New invoice' })
         : null,
-    ]),
+      primary && can(primary.permission)
+        ? el('a', { class: 'btn primary', href: `#${primary.path}`, text: primary.label })
+        : can('collection:write')
+          ? el('a', { class: 'btn primary', href: '#/collections/new', text: 'Record a payment' })
+          : null,
+    ].filter(Boolean)),
   ]);
 }
 
-function attention(dash) {
+function kpis(dash) {
   const ar = dash.receivable || {};
   const stock = dash.stock || {};
   const overdue = ar.over_90 || 0;
   const shortages = stock.needs_attention || 0;
 
-  const items = [
-    { label: 'Receivables', value: money(ar.total), note: `${count(ar.customers)} customers`,
-      tone: '', path: '/reports/aging' },
-    { label: 'Over 90 days', value: money(overdue),
-      note: overdue > 0 ? 'Needs chasing' : 'Nothing badly overdue',
-      tone: overdue > 0 ? 'bad' : 'good', path: '/reports/aging' },
-    { label: 'Sales this month', value: money(dash.month?.sales),
-      note: `${count(dash.month?.invoices)} invoices`, tone: '', path: '/reports/sales' },
-    { label: 'Stock needing attention', value: count(shortages),
-      note: `${count(stock.expiring)} expiring soon`,
-      tone: shortages > 0 ? 'warn' : 'good', path: '/reports/expiring' },
+  const tiles = [
+    ['Receivables', money(ar.total), `${count(ar.open_invoices)} open invoices`, '',
+      '/reports/aging'],
+    ['Over 90 days', money(overdue), overdue > 0 ? 'Needs chasing' : 'Nothing badly overdue',
+      overdue > 0 ? 'danger' : 'ok', '/reports/aging'],
+    ['Sales this month', money(dash.month?.sales), `${count(dash.month?.invoices)} invoices`, '',
+      '/reports/sales'],
+    ['Stock needing attention', count(shortages), `${count(stock.expiring)} expiring soon`,
+      shortages > 0 ? 'warn' : 'ok', '/reports/depleted'],
   ];
 
-  return el('div', { class: 'attention' }, items.map((item) =>
-    el('a', { class: `attention-item ${item.tone}`, href: `#${item.path}` }, [
-      el('span', { class: 'attention-label', text: item.label }),
-      el('strong', { class: 'attention-value', text: item.value }),
-      el('span', { class: 'attention-note', text: item.note }),
+  return el('div', { class: 'home-kpis' }, tiles.map(([label, value, sub, tone, path]) =>
+    el('a', { class: `home-kpi ${tone}`, href: `#${path}` }, [
+      el('span', { class: 'value', text: value }),
+      el('span', { class: 'label', text: label }),
+      el('span', { class: 'sub', text: sub }),
     ])));
 }
 
-function panel(column, badges) {
-  return el('section', { class: 'menu-panel' }, [
-    el('div', { class: 'menu-panel-head' }, [
-      el('h3', { text: column.title }),
-      el('span', { class: 'menu-panel-hint', text: column.hint }),
+/* --------------------------------------------------------------- panels -- */
+
+function panel(title, hint, body) {
+  return el('section', { class: 'home-panel' }, [
+    el('div', { class: 'home-panel-head' }, [
+      el('h3', { text: title }),
+      el('span', { class: 'home-panel-hint', text: hint }),
     ]),
-    el('div', { class: 'menu-items' }, column.items.map((item) => {
-      const badge = item.badge ? badges[item.badge] : null;
-      const attrs = { class: 'menu-item', dataset: { key: item.key } };
-      if (item.path) {
-        attrs.href = `#${item.path}`;
-      } else {
-        attrs.href = '#';
-        attrs.onClick = (event) => { event.preventDefault(); ACTIONS[item.action]?.(); };
-      }
-      return el('a', attrs, [
-        el('kbd', { class: 'menu-key', text: item.key }),
-        el('span', { class: 'menu-text' }, [
-          el('span', { class: 'menu-label', text: item.label }),
-          el('span', { class: 'menu-desc', text: item.desc }),
-        ]),
-        badge ? el('span', { class: `menu-badge ${badge.tone || ''}`, text: badge.text }) : null,
-      ]);
-    })),
+    el('div', { class: 'home-panel-body' }, [body]),
   ]);
 }
 
-function buildBadges(dash, admin, maint, arc) {
+function rows(items, empty) {
+  if (!items.length) return el('div', { class: 'home-empty', text: empty });
+  return el('ul', { class: 'home-list' }, items);
+}
+
+function row(href, left, middle, right, tone = '') {
+  return el('li', {}, [el('a', { class: 'home-row', href }, [
+    el('span', { class: 'r-code', text: left }),
+    el('span', { class: 'r-name', text: middle }),
+    el('span', { class: `r-value ${tone}`, text: right }),
+  ])]);
+}
+
+// Lists are rendered longer than a short screen can show and the panel clips
+// them. A 1080p monitor fills its panels; a 768-high laptop simply sees fewer
+// rows. Neither ends up scrolling, and neither leaves a hole.
+function transactionsPanel(dash) {
+  const t = dash.today || {};
+  const invoices = dash.recent_invoices || [];
+
+  return panel('Transactions', 'Latest activity', el('div', {}, [
+    el('div', { class: 'home-mini' }, [
+      mini('Invoiced today', money(t.sales), `${count(t.invoices)} documents`),
+      mini('Collected today', money(t.collected), `${count(t.payments)} payments`),
+    ]),
+    rows(invoices.map((r) => row(
+      `#/invoices/${encodeURIComponent(r.inv_no)}`,
+      r.inv_no, r.customer_name, money(r.net_amount),
+      r.balance > 0 ? 'warn-text' : '')),
+      'No invoices on file yet.'),
+  ]));
+}
+
+function reportsPanel(dash, aging) {
+  const owing = aging?.rows || [];
+  const totals = aging?.totals || {};
+
+  return panel('Reports', 'Who owes the most', el('div', {}, [
+    el('div', { class: 'home-mini' }, [
+      mini('Current', money(totals.current), 'Within terms'),
+      mini('Over 90 days', money(totals.bucket3), 'Chase these', 'danger'),
+    ]),
+    rows(owing.map((r) => row(
+      `#/customers/${encodeURIComponent(r.customer_code)}`,
+      r.customer_code, r.customer_name, money(r.total),
+      r.bucket3 > 0 ? 'danger-text' : '')),
+      'Nothing outstanding.'),
+  ]));
+}
+
+function maintenancePanel(dash, maint, admin) {
+  if (!maint && !admin) return null;
+
+  const backup = maint?.last_backup;
+  const days = backup
+    ? Math.floor((Date.now() - new Date(backup.created_at)) / 86400000)
+    : null;
+  const backupText = !backup ? 'Never'
+    : days === 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`;
   const stock = dash.stock || {};
-  const ar = dash.receivable || {};
-  const shortages = stock.needs_attention || 0;
-  const badges = {};
 
-  if (shortages) {
-    badges.stock_alerts = {
-      text: `${count(shortages)} of ${count(stock.items)}`,
-      tone: 'warn',
-    };
-  }
-  if (ar.open_invoices) badges.open_invoices = { text: `${count(ar.open_invoices)} open`, tone: '' };
-  if (ar.over_90 > 0) badges.overdue = { text: 'overdue', tone: 'bad' };
-  if (stock.expiring) badges.expiring = { text: `${count(stock.expiring)} expiring`, tone: 'warn' };
-  if (admin?.rows?.users) badges.users = { text: `${count(admin.rows.users)} users`, tone: '' };
+  const facts = [
+    ['Last backup', backupText, backup ? `${count(backup.size_mb)} MB` : 'Take one now',
+      !backup || days > 6 ? 'danger' : days >= 1 ? 'warn' : 'ok'],
+    ['Signed in now', count(maint?.sessions_open ?? 0),
+      `${count(admin?.rows?.users ?? 0)} accounts`, ''],
+  ];
 
-  const archived = (arc?.documents || []).reduce((sum, d) => sum + (d.rows || 0), 0);
-  if (archived) badges.archive = { text: `${count(archived)} on file`, tone: '' };
+  return panel('Maintenance', 'System health', el('div', {}, [
+    el('div', { class: 'home-mini' }, facts.map(([l, v, s, tone]) => mini(l, v, s, tone))),
+    rows([
+      row('#/maintenance', 'Database', `${count(maint?.database?.size_mb ?? 0)} MB`,
+        maint?.database?.journal_mode?.toUpperCase() || ''),
+      row('#/maintenance', 'Disk free', `${count(maint?.disk_free_mb ?? 0)} MB`,
+        (maint?.disk_free_mb ?? 0) < (maint?.database?.size_mb ?? 0) ? 'tight' : 'ample',
+        (maint?.disk_free_mb ?? 0) < (maint?.database?.size_mb ?? 0) ? 'warn-text' : ''),
+      row('#/maintenance', 'Backups kept', `${count(maint?.backups?.length ?? 0)} files`,
+        'on this disk'),
+      row('#/reports/depleted', 'Depleted', `${count(stock.depleted)} items`, 'at zero',
+        stock.depleted ? 'danger-text' : ''),
+      row('#/reports/expiring', 'Expiring', `${count(stock.expiring)} lots`, 'within 90 days',
+        stock.expiring ? 'warn-text' : ''),
+      row('#/reports/inventory', 'Stock value', money(stock.value), 'at cost'),
+      row('#/archive/summary', 'Archive', 'Purged history', 'read only'),
+      row('#/admin', 'Audit trail', `${count(admin?.rows?.audit_log ?? 0)} entries`, 'recorded'),
+    ], ''),
+  ]));
+}
 
-  if (maint) {
-    const last = maint.last_backup;
-    if (!last) {
-      badges.backup_age = { text: 'no backup', tone: 'bad' };
-    } else {
-      const days = Math.floor((Date.now() - new Date(last.created_at)) / 86400000);
-      badges.backup_age = days >= 1
-        ? { text: days === 1 ? 'backed up yesterday' : `${days} days since backup`,
-            tone: days > 6 ? 'bad' : 'warn' }
-        : { text: 'backed up today', tone: 'good' };
-    }
-  }
-  return badges;
+function mini(label, value, sub, tone = '') {
+  return el('div', { class: `home-mini-item ${tone}` }, [
+    el('span', { class: 'label', text: label }),
+    el('strong', { class: 'value', text: value }),
+    el('span', { class: 'sub', text: sub }),
+  ]);
 }
 
 /* ------------------------------------------------------------ shortcuts -- */
 
-// The accelerators belong to the home screen only. `#page` is reused between
-// routes rather than replaced, so "is my container still in the DOM?" is not a
-// usable signal - leaving them bound meant pressing S while reading the invoice
-// list jumped to Sales Summary. They are torn down on the way out instead.
 let detachShortcuts = null;
 
-function bindShortcuts(container, shortcuts) {
+function bindShortcuts() {
   detachShortcuts?.();
+
+  const map = new Map(
+    SHORTCUTS.filter((s) => can(s.permission)).map((s) => [s.key, s]));
 
   const onKey = (event) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
     if (document.querySelector('.modal-back')) return;
+
     if (event.key === '?') {
       event.preventDefault();
-      toast('Every tile shows its key. They are the same letters the DOS menu used.',
-        'info', 'Keyboard shortcuts');
+      toast([...map.values()].map((s) => `${s.key} ${s.label}`).join(' · '),
+        'info', 'The keys from the old menu');
       return;
     }
-    const key = event.key.toUpperCase();
-    const item = shortcuts.get(key);
+    const item = map.get(event.key.toUpperCase());
     if (!item) return;
     event.preventDefault();
-
-    const go = () => {
-      if (item.path) window.location.hash = `#${item.path}`;
-      else ACTIONS[item.action]?.();
-    };
-
-    const tile = container.querySelector(`[data-key="${key}"]`);
-    if (tile) {
-      tile.classList.add('firing');
-      setTimeout(go, 90);
-    } else {
-      go();
-    }
+    if (item.path) window.location.hash = `#${item.path}`;
+    else ACTIONS[item.action]?.();
   };
 
   const onHash = () => {
@@ -375,5 +310,3 @@ function bindShortcuts(container, shortcuts) {
     detachShortcuts = null;
   };
 }
-
-export { COLUMNS };

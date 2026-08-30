@@ -249,7 +249,7 @@ async function agingReport(host) {
   ], data.rows, {
     onRowClick: (row) => { window.location.hash = `#/customers/${encodeURIComponent(row.customer_code)}`; },
     footer: {
-      customer_name: `${count(data.rows.length)} customers`,
+      customer_name: `${count(data.totals.customers)} customers`,
       current: money(data.totals.current),
       bucket1: money(data.totals.bucket1),
       bucket2: money(data.totals.bucket2),
