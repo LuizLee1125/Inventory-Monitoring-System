@@ -183,13 +183,29 @@ you can preview a run without paper.
 
 ### Requirements
 
-- **FoxPro 2.x for DOS** (or FoxBASE+) — the runtime that executes `MAIN.FOX`
-- A DOS environment: **DOSBox-X**, **vDosPlus**, or real DOS/Windows 9x
-- The data files (`*.DBF`, `*.IDX`) in the same directory as the programs
+| Piece | Status | Notes |
+| --- | --- | --- |
+| **DOS environment** | free, install below | DOSBox-X (recommended), vDosPlus, or real DOS/Windows 9x |
+| **FoxPro 2.x for DOS** (or FoxBASE+) | **you must supply this** | Microsoft proprietary; not redistributable, so it is not in this repo. Any of `FOXPROX.EXE`, `FOXPRO.EXE`, `FOXR.EXE` works. |
+| **Data files** | `*.DBF` + `*.IDX` | must sit in the same directory as the programs |
+
+Install the emulator:
+
+```bash
+winget install joncampbell123.DOSBox-X
+```
 
 ### Start it
 
-From the DOS prompt in the program directory:
+1. Put your licensed FoxPro DOS installation in `C:\FoxPro` (or edit `FOXPRO_DIR` at the top of
+   `run\Run-IMS.bat`).
+2. Double-click **`run\Run-IMS.bat`**.
+
+The launcher locates DOSBox-X, verifies the FoxPro runtime, generates `run\ims.conf`, mounts FoxPro
+as `C:` and this project as `D:`, and runs `MAIN`. It uses DOSBox-X's TTF text renderer, so the
+80×25 screens come up crisp in a resizable Windows window rather than as scaled bitmap pixels.
+
+Doing it by hand instead — from the DOS prompt in the program directory:
 
 ```bash
 FOXPROX MAIN
@@ -204,6 +220,10 @@ DO MAIN
 Then log in. `PASSWORD.PRG` allows **four attempts** and quits to DOS after that; leaving the user
 name blank also quits.
 
+> `MAINSRC.PRG` is a reconstruction of the lost `MAIN.PRG` source, kept under a different name so it
+> never shadows the original `MAIN.FOX`. Run it with `DO MAINSRC` if you ever need a source-level
+> entry point.
+
 ### Multi-user setup
 
 Put the whole directory on a shared drive and run the same `MAIN.FOX` from each workstation.
@@ -212,6 +232,45 @@ Put the whole directory on a shared drive and run the same `MAIN.FOX` from each 
 1. **Reindex (`RBILDALL`) requires exclusive use** — everyone must be out; it `PACK`s tables, which
    permanently removes deleted records.
 2. **Run the daily backup** (Maintenance → Back-up Files) — it rotates Monday through Saturday.
+
+---
+
+## Reading the data without FoxPro
+
+If you don't have a FoxPro licence, the application can't run — but **the data is not locked up with
+it**. The tables are plain dBase-format `.DBF` files, readable on any modern machine.
+`tools/ims.py` does exactly that:
+
+```bash
+python -m pip install dbfread
+
+python tools/ims.py tables                 # every table, record count, size
+python tools/ims.py schema STKFYL          # field definitions
+python tools/ims.py head CUSTFYL -n 5 -f CUST_N,CUST_M,CUST_BAL
+python tools/ims.py find STKFYL STK_M ALVEDON
+python tools/ims.py csv SPLYRFYL           # one table to CSV
+python tools/ims.py sqlite --skip-big      # everything into one SQLite database
+```
+
+Once exported, the whole 25-year history is queryable with ordinary SQL:
+
+```sql
+SELECT CUST_M, CUST_BAL FROM CUSTFYL ORDER BY CUST_BAL DESC LIMIT 10;
+SELECT STK_M, QTY_R, EXPIRY_D FROM STKFYL WHERE EXPIRY_D < '2026-01-01';
+```
+
+Notes:
+
+- Text is decoded as **code page 437** (DOS), and records flagged deleted are skipped, matching the
+  app's `SET DELETED ON`.
+- The parser is deliberately tolerant: a handful of numeric fields contain debris like a bare `.`
+  that FoxPro accepted. Those cells become `NULL` rather than aborting the export.
+- Two scratch tables (`O_SITMP`, `SRT_STC`) have corrupt headers and are reported as unreadable.
+  Both are temporary report workspaces, not business data.
+- `--skip-big` omits the four tables over 100 MB (`STKREC`, `O_TRN2`, `O_SIFYL`, `COLECREC`). Export
+  those individually with `--only STKREC` when you need them.
+
+This is also the natural first step toward options 3 and 4 below.
 
 ---
 
@@ -284,11 +343,16 @@ want a quick visual win.
 ## Repository layout
 
 ```
-*.PRG      256 source programs (menus, screens, reports, utilities)
-MAIN.FOX   compiled entry point
-*.DBF      67 data tables      ← gitignored
-*.IDX      77 index files      ← gitignored
-readme.txt original one-page note from the author
+*.PRG          256 source programs (menus, screens, reports, utilities)
+MAIN.FOX       compiled entry point
+MAINSRC.PRG    reconstruction of the lost MAIN.PRG source
+run/
+  Run-IMS.bat  DOSBox-X launcher (generates ims.conf, mounts and starts MAIN)
+tools/
+  ims.py       read/export the DBF tables without FoxPro
+*.DBF          67 data tables      ← gitignored
+*.IDX          77 index files      ← gitignored
+readme.txt     original one-page note from the author
 ```
 
 ---
