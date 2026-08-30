@@ -1,0 +1,29 @@
+-- Marina Trading IMS - Web Edition
+-- Relational schema, migrated from the legacy FoxPro .DBF tables.
+--
+-- The schema used to be one 490-line file. It is now split across the numbered
+-- files in this folder, which `db.init_db()` runs in filename order on every
+-- startup. Every statement is `IF NOT EXISTS`, so re-running them against a
+-- live database is a no-op. The numbers leave gaps on purpose: a new part slots
+-- in without renumbering the rest.
+--
+--   000  conventions and connection pragmas  (this file)
+--   010  security      users, sessions, audit log, numbering, settings
+--   020  master files  divisions, categories, suppliers, customers, stock
+--   030  sales         invoices, sales returns, collections
+--   040  purchasing    purchases
+--   050  ledger        the stock movement ledger
+--   060  archive       the legacy O_* files, read-only
+--
+-- Conventions:
+--   * every mutable business row carries `version` for optimistic locking
+--     (the modern replacement for the legacy RLOCK() retry prompt)
+--   * money is REAL, quantities are REAL, dates are TEXT in ISO 'YYYY-MM-DD'
+--   * timestamps are TEXT in ISO 8601 UTC
+--   * a foreign key never crosses a file: the parent table is declared in the
+--     same part as the child, so the load order cannot break referentially
+--
+-- The database file itself is binary and cannot be opened in an editor. To read
+-- the *data* as text, run:  python backend/dump_db.py
+
+PRAGMA foreign_keys = ON;

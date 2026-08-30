@@ -23,7 +23,21 @@ LEGACY_DIR = Path(os.getenv("IMS_LEGACY_DIR", REPO_DIR / "legacy")).resolve()
 # The frontend is a sibling of the backend, not a folder inside it: the API and
 # the interface are separate deliverables that happen to ship together.
 STATIC_DIR = Path(os.getenv("IMS_FRONTEND", REPO_DIR / "frontend")).resolve()
-SCHEMA_PATH = APP_DIR / "schema.sql"
+
+# The schema is a folder of numbered .sql parts, not one file: 490 lines of
+# CREATE TABLE in a single document is not something anyone reads. db.init_db()
+# runs the parts in filename order.
+SCHEMA_DIR = APP_DIR / "schema"
+
+# Where dump_db.py writes the database out as plain text. Inside the
+# git-ignored database folder, because a dump holds the same customer records
+# the database does.
+PLAINTEXT_DIR = Path(
+    os.getenv("IMS_PLAINTEXT_DIR", DB_PATH.parent / "plaintext")).resolve()
+
+# Backups taken by the maintenance screen, named ims-YYYYMMDD-HHMMSS.sqlite.
+# Defined here rather than in the router so dump_db.py can find them too.
+BACKUP_DIR = DB_PATH.parent / "backups"
 
 COMPANY_NAME = os.getenv("IMS_COMPANY", "Marina Trading")
 APP_NAME = "Inventory Monitoring System"

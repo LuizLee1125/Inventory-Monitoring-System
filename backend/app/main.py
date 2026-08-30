@@ -48,10 +48,12 @@ def lan_addresses() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.init_db()
+    added = db.init_db()
     removed = security.purge_expired_sessions()
     print(f"\n  {config.COMPANY_NAME} - {config.APP_NAME} {__version__}")
     print(f"  Database : {config.DB_PATH}")
+    if added:
+        print(f"  Schema   : added {', '.join(added)}")
     if removed:
         print(f"  Sessions : purged {removed} expired")
     print(f"  Local    : http://localhost:{config.PORT}")

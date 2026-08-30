@@ -9,6 +9,10 @@ Migrate the legacy FoxPro .DBF files into the web application's SQLite database.
 
 The legacy files are only ever read. Nothing here writes to a .DBF.
 
+The target schema is not defined here: `db.init_db()` builds it from the
+numbered parts in `backend/app/schema/`, so a new table is added there and this
+script only has to learn how to fill it.
+
 Passwords cannot be carried across as-is (the legacy PASSFYL stores them in
 plaintext), so each one is hashed on the way in and the account is flagged
 `must_change_password`. Staff keep the password they know; it stops being
@@ -761,16 +765,25 @@ def main() -> None:
                         help="delete the existing database first")
     args = parser.parse_args()
 
-    if args.reset and config.DB_PATH.exists():
+    if args.reset:
+        # The -wal and -shm are cleared even when the database itself is
+        # already gone: a stale write-ahead log left beside a deleted database
+        # is replayed into the new one on first open.
+        removed = []
         for suffix in ("", "-wal", "-shm"):
             path = Path(str(config.DB_PATH) + suffix)
             if path.exists():
                 path.unlink()
-        print(f"Removed {config.DB_PATH}")
+                removed.append(path.name)
+        if removed:
+            print(f"Removed {', '.join(removed)}")
 
     print(f"Legacy data : {config.LEGACY_DIR}")
+    print(f"Schema      : {config.SCHEMA_DIR}")
     print(f"Database    : {config.DB_PATH}\n")
-    db.init_db()
+    added = db.init_db()
+    if added:
+        print(f"Schema brought up to date: added {', '.join(added)}\n")
 
     started = time.monotonic()
     with db.transaction() as conn:

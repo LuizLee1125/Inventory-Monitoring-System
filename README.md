@@ -472,7 +472,91 @@ two people creating invoices simultaneously can never be handed the same number.
 | `stock_moves` | The movement ledger — successor to the 658 MB `STKREC.DBF` |
 | `sequences`, `settings` | Document numbering and configuration |
 
-Full definitions with indexes are in [backend/app/schema.sql](backend/app/schema.sql).
+Full definitions with indexes are in [backend/app/schema/](backend/app/schema), split
+into numbered parts that the server runs in filename order on startup:
+[security](backend/app/schema/010_security.sql),
+[master files](backend/app/schema/020_master_files.sql),
+[sales](backend/app/schema/030_sales.sql),
+[purchasing](backend/app/schema/040_purchasing.sql),
+[ledger](backend/app/schema/050_stock_ledger.sql),
+[archive](backend/app/schema/060_archive.sql).
+
+Adding a column to one of those parts is enough: on the next start `init_db()`
+compares the parts against the live database and applies the missing columns
+with `ALTER TABLE ADD COLUMN`, then prints what it added. Give every new column
+a `DEFAULT` — SQLite cannot add a `NOT NULL` column without one, since there
+would be no value for the rows already there. Columns the database has and the
+schema no longer declares are reported but never dropped.
+
+### Reading the database
+
+Nothing in `database/` can be opened in an editor. `ims.sqlite` is binary, the
+backups are the same format, and `-wal` / `-shm` are internal SQLite structures
+that are not text either. To get a readable copy:
+
+```
+python backend/dump_db.py                   # the live database
+python backend/dump_db.py --backups latest  # ... and the newest backup
+python backend/dump_db.py --backups all     # ... and every backup
+python backend/dump_db.py --limit 0         # every row, however many
+```
+
+It writes `database/plaintext/`, one folder per database:
+
+```
+plaintext/
+  live/                       the working database
+    000_schema.sql            every CREATE statement, as the database stored it
+    _journal.txt              what the -wal and -shm hold right now
+    _manifest.txt             table, rows written, rows held, files, size
+    divisions.sql             a small table: one file
+    invoices/                 a big one: a folder of numbered chunks
+      0001-0200.sql
+      0201-0400.sql
+  backups/
+    ims-20260830-230617/      one folder per backup, same layout
+```
+
+The files are written to be read rather than to be compact. A table over
+`--rows-per-file` rows (200 by default) becomes a folder of numbered chunks, so
+no file is more than about 70 KB. Inside one, the column list is stated once per
+statement instead of once per row, every file opens with a numbered column
+legend, and each row is wrapped so nothing runs off the side of the editor:
+
+```sql
+-- invoices  -  rows 1 to 200 of 84,781 in the database
+--
+-- 27 column(s), in the order the values appear below:
+--    1 inv_no         TEXT        2 customer_code  TEXT
+--    3 customer_name  TEXT        4 address        TEXT
+--   ...
+
+INSERT INTO invoices
+       (inv_no, customer_code, customer_name, address, city, inv_date, due_date,
+        terms_text, terms_days, price_cat, salesman, remarks, gross, disc1, ...)
+VALUES
+       -- 1
+       ('N1605-0124', 'MEC', 'MEC PHARMACY', 'A ST.PAUL SUBD.BRGY.CANALATE',
+        'MALOLOS BULACAN', '2016-05-17', '2016-06-16', 'CDD-CASH', 30, 'A', ...),
+```
+
+It is still valid SQL — a dump replays into an empty database — but that is a
+side effect, not the purpose.
+
+`_journal.txt` is the closest thing to readable that a `-wal` and `-shm` have:
+they hold raw database pages and a shared-memory index, not rows, so what the
+report gives is the log's header, how many committed frames are sitting in it
+and how much of the database they cover. The rows themselves are already in the
+`.sql` files — a read of the database sees the log's contents merged in.
+
+Row counts are capped at 2,000 per table by default; `--limit 0` writes
+everything. Databases are opened read-only and a dump leaves the folder exactly
+as it found it, journal files included, so this is safe to run while the server
+is up.
+
+Session tokens and password hashes are left out unless you pass
+`--include-secrets`. The folder is git-ignored along with the rest of
+`database/`, because a dump holds the same customer records the database does.
 
 ### What the migration changes on purpose
 
@@ -526,6 +610,7 @@ backend/                Python API
   requirements.txt      what the server needs to run
   requirements-dev.txt  adds ruff
   migrate.py            legacy .DBF  ->  SQLite
+  dump_db.py            SQLite  ->  plain .sql text, for looking at the data
   reset_password.py     console recovery when nobody can sign in
   .venv/                created on first run (gitignored)
   app/
@@ -534,7 +619,9 @@ backend/                Python API
     db.py               connections, WAL, transactions, sequences, audit
     security.py         password hashing, sessions, roles and permissions
     deps.py             auth dependencies, optimistic-locking helpers, paging
-    schema.sql          the full relational schema
+    schema/             the relational schema, in numbered parts run in order
+                        000 conventions, 010 security, 020 master files,
+                        030 sales, 040 purchasing, 050 ledger, 060 archive
     routers/            auth, stock, customers, suppliers, invoices,
                         purchases, returns, collections, reports, admin
 
@@ -554,7 +641,10 @@ frontend/               browser application, no build step
       archive.js        archived records and archive inquiry
       …                 one module per remaining screen
 
-database/               ims.sqlite and backups/ (both gitignored)
+database/               all gitignored
+  ims.sqlite            the database itself, binary
+  backups/              copies taken by the maintenance screen, also binary
+  plaintext/            text dump written by dump_db.py, safe to delete
 
 legacy/                 the FoxPro/DOS system it replaces
   *.PRG                 256 source programs
@@ -577,6 +667,7 @@ Every setting is an environment variable, so nothing needs editing to move betwe
 | `IMS_DB` | `database/ims.sqlite` | Database location |
 | `IMS_FRONTEND` | `frontend/` | Folder the browser application is served from |
 | `IMS_LEGACY_DIR` | `legacy/` | Where `migrate.py` looks for `.DBF` files |
+| `IMS_PLAINTEXT_DIR` | `database/plaintext/` | Where `dump_db.py` writes the text dump |
 | `IMS_HOST` / `IMS_PORT` | `0.0.0.0` / `8080` | Bind address and port |
 | `IMS_COMPANY` | `Marina Trading` | Name shown in the header and page titles |
 | `IMS_SESSION_HOURS` | `12` | How long a sign-in lasts |

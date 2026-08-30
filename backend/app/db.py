@@ -14,6 +14,7 @@ import threading
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from . import config
@@ -97,11 +98,123 @@ def execute(sql: str, params: Iterable[Any] = ()) -> sqlite3.Cursor:
 # schema and seeding
 # --------------------------------------------------------------------------- #
 
-def init_db() -> None:
-    """Create the schema if it is missing. Safe to call on every startup."""
+def schema_parts() -> list[Path]:
+    """The schema files, in the order they must run.
+
+    Filename order is load order, which is why the parts are numbered. Sorting
+    plain names would put `100_` before `20_`; the fixed-width numbers make the
+    obvious sort the correct one.
+    """
+    return sorted(config.SCHEMA_DIR.glob("*.sql"))
+
+
+def reference_schema() -> sqlite3.Connection:
+    """An empty in-memory database built from the parts: what the code expects.
+
+    Comparing against a real database beats parsing the .sql files. SQLite has
+    already done the parsing, and `PRAGMA table_info` answers in exactly the
+    form the comparison needs.
+    """
+    ref = sqlite3.connect(":memory:")
+    ref.row_factory = sqlite3.Row
+    for part in schema_parts():
+        try:
+            ref.executescript(part.read_text(encoding="utf-8"))
+        except sqlite3.Error as exc:
+            # Name the file. One 'near "x": syntax error' out of a seven-part
+            # schema is not enough to go on.
+            raise RuntimeError(f"{part.name}: {exc}") from exc
+    return ref
+
+
+def _add_column_sql(table: str, col: sqlite3.Row) -> str:
+    """One ALTER TABLE ADD COLUMN, built from the reference column definition.
+
+    `dflt_value` comes back as the literal text as written in the schema ('0',
+    "''"), which is what ALTER TABLE wants, so it goes in unquoted.
+    """
+    sql = f'ALTER TABLE {table} ADD COLUMN "{col["name"]}" {col["type"]}'
+    if col["notnull"]:
+        if col["dflt_value"] is None:
+            # SQLite refuses this outright, and it is right to: there is no
+            # value it could put in the existing rows.
+            raise RuntimeError(
+                f"{table}.{col['name']} is NOT NULL with no DEFAULT, so it "
+                f"cannot be added to a database that already has rows. Give it "
+                f"a DEFAULT in the schema part, or migrate the table by hand.")
+        sql += " NOT NULL"
+    if col["dflt_value"] is not None:
+        sql += f" DEFAULT {col['dflt_value']}"
+    return sql
+
+
+def _reconcile_columns(conn: sqlite3.Connection,
+                       ref: sqlite3.Connection) -> tuple[list[str], list[str]]:
+    """Bring an existing database up to what the schema parts declare.
+
+    `CREATE TABLE IF NOT EXISTS` builds a missing table but does nothing at all
+    to a table that already exists - so a column added to a schema part would
+    never reach a live database, and every read of it would fail one query at a
+    time. This closes that gap: new columns are added, and anything the code no
+    longer declares is reported rather than dropped.
+    """
+    added: list[str] = []
+    unexpected: list[str] = []
+
+    tables = [r["name"] for r in ref.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' "
+        "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+
+    for table in tables:
+        live = {r["name"]: r for r in conn.execute(f"PRAGMA table_info({table})")}
+        if not live:
+            continue                      # the CREATE above has just made it
+        wanted = {r["name"]: r for r in ref.execute(f"PRAGMA table_info({table})")}
+
+        for name, col in wanted.items():
+            if name not in live:
+                conn.execute(_add_column_sql(table, col))
+                added.append(f"{table}.{name}")
+
+        # Never dropped. A column the code stopped declaring may still hold the
+        # only copy of something, and no read is broken by its being there.
+        unexpected += [f"{table}.{n}" for n in live if n not in wanted]
+
+    return added, unexpected
+
+
+def init_db() -> list[str]:
+    """Build or update the schema. Safe to call on every startup.
+
+    Returns the columns it had to add, which is empty on all but the first run
+    after a schema change. Callers print it; nothing depends on it.
+    """
+    parts = schema_parts()
+    if not parts:
+        # Without this the server would come up cleanly against an empty
+        # database and fail one query at a time, which is a much worse way to
+        # find out that IMS_DB or the checkout is wrong.
+        raise RuntimeError(f"No schema files found in {config.SCHEMA_DIR}")
+
     conn = get_connection()
-    conn.executescript(config.SCHEMA_PATH.read_text(encoding="utf-8"))
+    for part in parts:
+        try:
+            conn.executescript(part.read_text(encoding="utf-8"))
+        except sqlite3.Error as exc:
+            raise RuntimeError(f"{part.name}: {exc}") from exc
+
+    ref = reference_schema()
+    try:
+        added, unexpected = _reconcile_columns(conn, ref)
+    finally:
+        ref.close()
+
+    if unexpected:
+        print(f"  Schema : {len(unexpected)} column(s) in the database that no "
+              f"schema part declares: {', '.join(unexpected)}")
+
     _seed_sequences(conn)
+    return added
 
 
 def _seed_sequences(conn: sqlite3.Connection) -> None:

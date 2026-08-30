@@ -20,7 +20,7 @@ from ..deps import require
 
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 
-BACKUP_DIR = config.DB_PATH.parent / "backups"
+BACKUP_DIR = config.BACKUP_DIR
 KEEP_BACKUPS = 14
 
 
