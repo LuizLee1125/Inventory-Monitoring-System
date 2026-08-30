@@ -33,54 +33,168 @@ Data       Migrated from 67 legacy .DBF tables: 1,735 customers, 2,137 stock ite
 
 ## Quick start (Windows)
 
-Install Python once, if it is not already there:
+### 1. Install Python, once
 
 ```bash
 winget install Python.Python.3.12
 ```
 
-Then start the system:
+Version 3.10 or newer. Nothing else needs installing — no database server, no Node.js, no web server.
+
+### 2. Load the legacy data
 
 ```bash
 start.bat
 ```
 
-The first run creates `backend\.venv`, installs the dependencies, and starts the server. It prints
-something like:
-
-```
-  Marina Trading - Inventory Monitoring System 1.0.0
-  Database : C:\Projects\Dad Project\database\ims.sqlite
-  Local    : http://localhost:8080
-  Network  : http://192.168.100.17:8080
-```
-
-Open the **Network** address from any other PC on the same network.
-
-### Loading the legacy data first
-
-Before the first start, migrate the DOS data into the application database:
+Run it once and close it. That creates `backend\.venv` and installs the dependencies. Then migrate
+the DOS data into the application database:
 
 ```bash
 backend\.venv\Scripts\python.exe backend\migrate.py
 ```
 
-It reads the `.DBF` files from `legacy\` and writes `database\ims.sqlite`. Useful variants:
+It reads the `.DBF` files from `legacy\` and writes `database\ims.sqlite`, taking about seven minutes
+for the full 2.5-million-row movement ledger. Variants:
 
 | Command | Effect |
 | --- | --- |
-| `migrate.py` | Everything, including the 2.5-million-row movement ledger (about 7 minutes) |
-| `migrate.py --skip-moves` | Masters and documents only — fast, but no invoice line detail |
+| `migrate.py` | Everything, including the movement ledger and reconstructed invoice lines |
+| `migrate.py --skip-moves` | Masters and documents only — under two minutes, but no line detail |
 | `migrate.py --since 2020-01-01` | Limit the movement ledger to recent years |
 | `migrate.py --reset` | Delete the existing database and rebuild from scratch |
 
 The legacy `.DBF` files are only ever read. Nothing writes back to them.
 
-### Signing in
+### 3. Start the server
 
-Every user from the legacy `PASSFYL` is migrated with the password they already knew — now stored as
-a PBKDF2 hash rather than plaintext — and is required to change it at first sign-in. If no
+```bash
+start.bat
+```
+
+It prints where it is listening:
+
+```
+  Marina Trading - Inventory Monitoring System 1.0.0
+  Database : C:\Projects\Inventory-Monitoring-System\database\ims.sqlite
+  Local    : http://localhost:8080
+  Network  : http://192.168.100.17:8080
+```
+
+Open **Local** on this PC, or the **Network** address from any other PC on the same network. Closing
+the window stops the server. To use a different port:
+
+```bash
+start.bat 9000
+```
+
+### 4. Sign in
+
+Everyone from the legacy `PASSFYL` is migrated with the password they already knew — now stored as a
+PBKDF2 hash rather than plaintext — and is required to change it at first sign-in. If no
 administrator account exists, the migration creates `ADMIN` with the password `changeme`.
+
+**One person, one login.** The DOS system worked differently: it gave a person one row per access
+code, each with its own password, and *the password you typed chose which menu you got*. `ADMIN`
+alone had eight — `MNUMAIN` opened the main menu, `MNUINVS` the inventory system, `MNUAR` accounts
+receivable, and so on. A web account cannot work that way, so each name collapses to a single login
+that carries the **widest role that person held**, and keeps that row's password. The other
+passwords for the same name stop working.
+
+So if an old password is rejected, it is probably one of the discarded ones rather than a fault. To
+see which row won for each person, read the legacy file directly:
+
+```bash
+backend\.venv\Scripts\python.exe legacy\tools\ims.py head PASSFYL -n 30 -f USER_M,PASSWORD,ACCESMNU,ACCESS_C
+```
+
+Match the `ACCESMNU` values against the role table under [Roles and permissions](#roles-and-permissions);
+the surviving password is the one on the most privileged row for that user.
+
+**Case does not matter for a migrated password.** The DOS login upper-cased every keystroke, so
+nobody ever had to think about it, and every migrated password is stored upper-case. An account that
+has not yet chosen a new password will therefore also accept the lower-case form. That concession
+disappears the moment the user sets their own password.
+
+If a member of staff is locked out, sign in as an administrator and use **Users & Audit → Reset
+password**.
+
+### Locked out of the administrator account
+
+There is a console recovery path, for when nobody can sign in at all. Run it on the server itself:
+
+```bash
+backend\.venv\Scripts\python.exe backend\reset_password.py
+```
+
+With no arguments it lists every account with its role, whether it is enabled, and when it last
+signed in. To set a password:
+
+```bash
+backend\.venv\Scripts\python.exe backend\reset_password.py ADMIN
+```
+
+It prompts twice, closes that account's open sessions, and requires them to choose their own
+password at the next sign-in. `--make-admin` also restores the admin role and re-enables a disabled
+account, and `--password` sets one non-interactively for scripting.
+
+This grants nothing that running it does not already imply — anyone who can execute it already has
+the database file in their hands. Keep it on the server, and never expose it.
+
+---
+
+## Checking for errors
+
+### Lint both halves
+
+```bash
+lint.bat
+```
+
+One command, one verdict — `CLEAN` and exit code 0, or `FAILED` and exit code 1 with the findings
+listed. It installs what it needs on first run. To apply the fixes that can be applied
+automatically:
+
+```bash
+lint.bat --fix
+```
+
+Node.js is needed only for the frontend half; without it that half is skipped with a note and the
+backend is still checked. Details and the rule exemptions are under [Linting](#linting).
+
+### Check the code parses, with nothing installed
+
+Useful on a machine that has neither ruff nor ESLint:
+
+```bash
+backend\.venv\Scripts\python.exe -m compileall -q backend/app backend/migrate.py
+```
+
+```bash
+for %f in (frontend\js\*.js frontend\js\views\*.js) do @node --check "%f"
+```
+
+Silence means everything parses. This catches typos, not code smells.
+
+### Runtime errors
+
+| Where to look | What you get |
+| --- | --- |
+| The `start.bat` window | Every request, and a full traceback for anything that fails. This is the first place to look when a screen misbehaves. |
+| Browser developer tools, Console tab (F12) | Frontend errors. The interface also shows a red toast for anything the API rejects. |
+| `http://localhost:8080/api/docs` | Interactive API reference — call any endpoint directly to see whether the problem is the backend or the interface. |
+| **Users & Audit** screen | Who changed what and when, plus live sessions and row counts per table. |
+
+An edit that fails with *"changed by another user"* is not a fault: it is the optimistic-locking
+guard doing its job. Reload the record and reapply the change.
+
+### Check the database is sound
+
+```bash
+backend\.venv\Scripts\python.exe -c "import sqlite3,pathlib; print(sqlite3.connect(pathlib.Path('database/ims.sqlite')).execute('PRAGMA integrity_check').fetchone()[0])"
+```
+
+`ok` means the file is intact.
 
 ---
 
@@ -251,6 +365,7 @@ Full definitions with indexes are in [backend/app/schema.sql](backend/app/schema
 | --- | --- | --- |
 | Plaintext `PASSWORD` field | PBKDF2-SHA256 hash, forced change at first sign-in | The old file exposed every password to anyone who could open a `.DBF` |
 | `ACCESMNU` menu name | `role` plus a permission matrix | Menu visibility is not access control |
+| Several rows per person, one per access code, each with its own password | One login carrying the widest role that person held | The typed password used to select a menu; a web session cannot pick its privileges at sign-in |
 | 60 monthly history columns on the customer record | `customer_monthly` rows recomputed from the invoices | The columns had no year attached; the derived table always agrees with the documents |
 | Invoice lines living only in `STKREC` | `invoice_lines`, rebuilt from the ledger during migration | Lines belong to the invoice, not to the stock file |
 | `CUST_BAL` / `SPLYR_BAL` running totals | Recomputed from the open documents | After 25 years of purges and archive runs the cached totals disagreed with the invoices they summarise. Customer balances now reconcile to the cent with the open invoices |
@@ -294,6 +409,7 @@ backend/                Python API
   requirements.txt      what the server needs to run
   requirements-dev.txt  adds ruff
   migrate.py            legacy .DBF  ->  SQLite
+  reset_password.py     console recovery when nobody can sign in
   .venv/                created on first run (gitignored)
   app/
     main.py             app factory, routing, frontend hosting
@@ -371,18 +487,8 @@ an update on reload.
 
 ### Linting
 
-One command checks both halves and returns a single pass/fail:
-
-```bash
-lint.bat
-```
-
-```bash
-lint.bat --fix
-```
-
-It installs what it needs on first run, and skips the frontend with a note if Node.js is absent —
-Node is required only for linting, never to run the application.
+`lint.bat` checks both halves — see [Checking for errors](#checking-for-errors) for the everyday
+commands. What sits behind it:
 
 | Half | Tool | Configuration |
 | --- | --- | --- |

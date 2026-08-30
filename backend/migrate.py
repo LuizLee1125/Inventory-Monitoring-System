@@ -94,19 +94,40 @@ def progress(label: str, n: int) -> None:
 # --------------------------------------------------------------------------- #
 
 def migrate_users(conn) -> int:
+    """Collapse PASSFYL into one account per person.
+
+    The DOS system gave a person one row per access code, each with its own
+    password, and the password you typed decided which menu you got: ADMIN
+    alone had eight of them (MNUMAIN, MNUSO, MNUNVCS, MNUAR, MNUINVS, ...).
+    A web account cannot work that way, so each name collapses to a single
+    login carrying the *widest* role that person held - taking the first row
+    encountered would have demoted people whose rows happened to be ordered
+    with the narrowest menu first.
+
+    The password kept is the one belonging to the winning row.
+    """
     src = table("PASSFYL")
     if src is None:
         return 0
-    count = 0
+
+    best: dict[str, dict] = {}
     for rec in src:
         username = S(rec.get("USER_M"), upper=True)
         if not username:
             continue
-        legacy_menu = S(rec.get("ACCESMNU"), upper=True)
-        role = security.LEGACY_MENU_TO_ROLE.get(legacy_menu, "viewer")
-        password = S(rec.get("PASSWORD")) or username
-        # PASSFYL held one row per user *per access code*, so the same name can
-        # appear several times. The first row wins; count only real inserts.
+        role = security.LEGACY_MENU_TO_ROLE.get(
+            S(rec.get("ACCESMNU"), upper=True), "viewer")
+        candidate = {
+            "role": role,
+            "rank": security.ROLE_RANK.get(role, 0),
+            "password": S(rec.get("PASSWORD")) or username,
+            "access_code": S(rec.get("ACCESS_C"), upper=True),
+        }
+        if username not in best or candidate["rank"] > best[username]["rank"]:
+            best[username] = candidate
+
+    count = 0
+    for username, chosen in best.items():
         cursor = conn.execute(
             """
             INSERT INTO users(username, password_hash, full_name, role,
@@ -115,8 +136,8 @@ def migrate_users(conn) -> int:
             VALUES (?, ?, ?, ?, 1, 1, ?, ?)
             ON CONFLICT(username) DO NOTHING
             """,
-            (username, security.hash_password(password), username.title(), role,
-             S(rec.get("ACCESS_C"), upper=True), db.now()),
+            (username, security.hash_password(chosen["password"]),
+             username.title(), chosen["role"], chosen["access_code"], db.now()),
         )
         count += cursor.rowcount or 0
     return count

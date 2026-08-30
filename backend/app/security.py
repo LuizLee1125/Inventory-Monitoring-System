@@ -28,6 +28,27 @@ def hash_password(password: str, *, rounds: int | None = None) -> str:
     return f"pbkdf2_sha256${rounds}${salt}${digest.hex()}"
 
 
+def password_matches(password: str, user_row) -> bool:
+    """Check a typed password against a stored hash.
+
+    Normally an exact, case-sensitive comparison. There is one narrow
+    exception: the DOS login screen upper-cased every keystroke
+    (`mpass = mpass + UPPER(CHR(i))` in PASSWORD.PRG), so nobody who used the
+    old system ever had to think about case, and every migrated password is
+    stored upper-case. An account that has not yet chosen a new password is
+    therefore also allowed to match on the upper-cased form.
+
+    The moment the user sets their own password, `must_change_password` clears
+    and this concession disappears with it.
+    """
+    stored = user_row["password_hash"]
+    if verify_password(password, stored):
+        return True
+    if user_row["must_change_password"] and password != password.upper():
+        return verify_password(password.upper(), stored)
+    return False
+
+
 def verify_password(password: str, stored: str) -> bool:
     try:
         algorithm, rounds, salt, expected = stored.split("$")
@@ -94,6 +115,19 @@ ROLES: dict[str, dict] = {
         "legacy": "-",
         "permissions": list(_READ_ONLY),
     },
+}
+
+# Most to least privileged. The DOS system gave one person several PASSFYL
+# rows - one per access code, each with its own password - so a migrated
+# account has to collapse to a single role: the widest one they held.
+ROLE_RANK = {
+    "admin": 7,
+    "manager": 6,
+    "inventory": 5,
+    "invoicing": 4,
+    "ar": 3,
+    "sales": 2,
+    "viewer": 1,
 }
 
 # Legacy ACCESMNU value -> new role.

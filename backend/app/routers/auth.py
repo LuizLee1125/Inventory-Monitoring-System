@@ -22,7 +22,7 @@ def login(payload: dict, request: Request, response: Response) -> dict:
         "must_change_password FROM users WHERE username = ?", (username,))
 
     # Same message either way, so the form cannot be used to enumerate users.
-    if row is None or not security.verify_password(password, row["password_hash"]):
+    if row is None or not security.password_matches(password, row):
         raise HTTPException(status_code=401, detail="User name or password is incorrect.")
     if not row["is_active"]:
         raise HTTPException(status_code=403, detail="This account has been disabled.")
