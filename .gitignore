@@ -1,0 +1,41 @@
+# ---------------------------------------------------------------------------
+# Production data: DO NOT COMMIT.
+# Contains real customer/supplier records and plaintext passwords, and several
+# files exceed GitHub's 100 MB hard limit (STKREC.DBF is 658 MB).
+# ---------------------------------------------------------------------------
+*.DBF
+*.dbf
+*.IDX
+*.idx
+*.CDX
+*.cdx
+*.FPT
+*.fpt
+*.MEM
+*.mem
+
+# Compiled FoxPro objects
+*.FOX
+*.fox
+*.FXP
+*.fxp
+*.APP
+*.app
+*.ERR
+*.err
+
+# Report/print scratch output
+TEMP
+TEMP.*
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# ---------------------------------------------------------------------------
+# If you add a synthetic sample dataset for demo purposes, force-add it:
+#   git add -f sample/*.DBF
+# ---------------------------------------------------------------------------

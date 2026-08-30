@@ -1,0 +1,404 @@
+* program.....: LstSaleC.prg
+*             : 07/25; modified 02/05/2002
+*             : sales summary per customer; includes total
+
+DO BRDR2
+@ 8, 2 SAY 'SI DATE   SI NO.     TERRITORY     T. AMT.   NET AMT.     T.COST   G.PROFIT'
+
+save screen to atlscreen
+atlmsg="generate totals only (y/n)  "
+atlopt="N"
+atllen=len(atlmsg)
+set colo to rb/rb
+@ 11,41-atllen/2-2 clear to 13,41-atllen/2+atllen+1
+set colo to +w/rb
+@ 11,41-atllen/2-2 to 13,41-atllen/2+atllen+1
+@ 12,41-atllen/2 say atlmsg
+@ 12,40-atllen/2+len(atlmsg) get atlopt pict "Y" valid atlopt$"YyNn"
+read
+restore screen from atlscreen
+
+if atlopt="Y"
+   do lstsalct
+   return
+endif
+
+
+SELECT 1
+   USE SIFYL INDEX SI_D
+
+DO WHILE .T.
+    &C_HEAD
+    @ 20, 1 SAY SPACE(78)
+    &C_MESSAGE
+    @ 21, 20 SAY ' NOTE: Press <Enter> to Return to Main Menu. '
+    &C_BODY
+    @ 5, 3 SAY 'Start At Issued Date :'
+    @ 6, 3 SAY 'Stop  At Issued Date :'
+    @ 5, 52 SAY 'Customer Code :'
+    SET CENT ON
+    minv_d= CTOD('01/01/2000')
+    GOTO BOTTOM
+    mfield2= DATE()
+    GOTO TOP
+    mfield1= CTOD('  /  /  ')
+    &C_GET
+    @ 6, 26 SAY mfield2
+    @ 5, 26 GET mfield1 PICTURE '@!'
+    READ
+    IF mfield1=CTOD('  /  /  ')
+        CLOSE DATA
+        set cent off
+        RETURN
+    ELSE
+        SEEK mfield1
+        IF EOF()
+            GOTO TOP
+            IF mfield1>inv_d
+                GOTO BOTTOM
+                IF mfield1<inv_d
+                    SKIP
+                    DO WHILE EOF()
+                        mfield1= mfield1+1
+                        SEEK mfield1
+                    ENDDO
+                ENDIF
+            ENDIF
+            mfield1= inv_d
+            confirm= ' '
+            &C_CLEAR
+            @ 21, 0 CLEAR
+            &C_MESSAGE
+            @ 23, 23 SAY ' Earliest Recorded Date is '+DTOC(mfield1)+'. '
+            &C_GET
+            @ 21, 20 SAY ' Press <A> to Abort, any key to Continue.' GET confirm PICTURE '!'
+            READ
+            &C_CLEAR
+            @ 21, 0
+            @ 23, 0
+            IF confirm='A'
+                LOOP
+            ENDIF
+            &C_GET
+            @ 5, 26 SAY mfield1
+        ENDIF
+    ENDIF
+    @ 6, 26 GET mfield2 PICTURE '@!'
+    READ
+    SEEK mfield2
+    IF EOF()
+        GOTO BOTTOM
+        mfield2= inv_d
+        confirm= ' '
+        &C_CLEAR
+        @ 21, 0 CLEAR
+        &C_MESSAGE
+        @ 23, 23 SAY ' Latest Recorded Date is '+DTOC(mfield2)+'. '
+        &C_GET
+        @ 21, 20 SAY ' Press <A> to Abort, any key to Continue.' GET confirm PICTURE '!'
+        READ
+        &C_CLEAR
+        @ 21, 0
+        @ 23, 0
+        IF confirm='A'
+            LOOP
+        ENDIF
+        &C_GET
+        @ 6, 26 SAY mfield2
+    ENDIF
+    mfield3= SPACE(10)
+    @ 5, 68 GET mfield3 PICTURE '@!'
+    READ
+    SET CENTURY OFF
+    choice= 'L'
+    DO OPTION8
+    IF mfield1>mfield2
+        mtemp= mfield1
+        mfield1= mfield2
+        mfield2= mtemp
+    ENDIF
+    SEEK mfield1
+    DO CASE
+        CASE choice='L'
+            STORE 0.00 TO stl1, stl2, stl3, stl4, gtl1, gtl2, gtl3, gtl4
+            &C_CLEAR
+            @ 10, 1 CLEAR TO 19, 78
+            flag= 1
+            row= 9
+            DO WHILE .not. EOF().and.inv_d<=mfield2
+                IF flag=1
+                    c_list= c_option
+                    flag= 0
+                ELSE
+                    c_list= c_body
+                    flag= 1
+                ENDIF
+                &C_LIST
+                IF LEN(TRIM(mfield3))<>0
+                    IF mfield3<>cust_n
+                        SKIP
+                        LOOP
+                    ENDIF
+                ENDIF
+                stl1= stl1+inv_a
+                stl2= stl2+net_a
+                stl3= stl3+inv_c
+                stl4= stl4+net_a-inv_c
+                gtl1= gtl1+inv_a
+                gtl2= gtl2+net_a
+                gtl3= gtl3+inv_c
+                gtl4= gtl4+net_a-inv_c
+                @ row, 2 SAY inv_d PICTURE '@!'
+                @ row, 12 SAY inv_n PICTURE '@!'
+                @ row, 23 SAY cust_s PICTURE '@!'
+                @ row, 34 SAY inv_a PICTURE '###,###.##'
+                @ row, 45 SAY net_a PICTURE '###,###.##'
+                if muser="ADMIN" .OR. muser="BERDY"
+                   @ row, 56 SAY inv_c PICTURE '###,###.##'
+                   @ row, 67 SAY net_a-inv_c PICTURE '###,###.##'
+                else
+                   @ row, 56 SAY '   ---    '
+                   @ row, 67 SAY '   ---    '
+                endif
+                row= row+1
+                SKIP
+                IF EOF()
+                    EXIT
+                ENDIF
+                IF row=19
+                    &C_HEAD
+                    @ 19, 1 SAY SPACE(78)
+                    @ 19, 10 SAY 'SUB   TOTAL'
+                    @ 19, 34 SAY stl1 PICTURE '#######.##'
+                    @ 19, 45 SAY stl2 PICTURE '#######.##'
+                    if muser="ADMIN" .OR. muser="BERDY"
+                       @ 19, 56 SAY stl3 PICTURE '#######.##'
+                       @ 19, 67 SAY stl4 PICTURE '#######.##'
+                    else
+                       @ 19, 56 SAY '   ---    '
+                       @ 19, 67 SAY '   ---    '
+                    endif
+                    @ 20, 1 SAY SPACE(78)
+                    @ 20, 10 SAY 'GRAND TOTAL'
+                    @ 20, 34 SAY gtl1 PICTURE '#######.##'
+                    @ 20, 45 SAY gtl2 PICTURE '#######.##'
+                    if muser="ADMIN" .OR. muser="BERDY"
+                       @ 20, 56 SAY gtl3 PICTURE '#######.##'
+                       @ 20, 67 SAY gtl4 PICTURE '#######.##'
+                    else
+                       @ 20, 56 SAY '   ---    '
+                       @ 20, 67 SAY '   ---    '
+                    endif
+                    choice= ' '
+                    &C_CLEAR
+                    @ 21, 0
+                    &C_MESSAGE
+                    @ 21, 20 SAY ' Press <A> to Abort, any key to continue.' GET choice PICTURE '!'
+                    READ
+                    IF choice='A'
+                        SET CENTURY Off
+                        CLOSE DATA
+                        RETURN
+                    ENDIF
+                    &C_CLEAR
+                    @ 9, 1 CLEAR TO 19, 78
+                    row= 9
+                    STORE 0.00 TO stl1, stl2, stl3, stl4
+                ENDIF
+            ENDDO
+            &C_HEAD
+            @ 19, 1 SAY SPACE(78)
+            @ 19, 10 SAY 'SUB   TOTAL'
+            @ 19, 34 SAY stl1 PICTURE '#######.##'
+            @ 19, 45 SAY stl2 PICTURE '#######.##'
+            if muser="ADMIN" .OR. muser="BERDY"
+               @ 19, 56 SAY stl3 PICTURE '#######.##'
+               @ 19, 67 SAY stl4 PICTURE '#######.##'
+            else
+               @ 19, 56 SAY '   ---    '
+               @ 19, 67 SAY '   ---    '
+            endif
+            @ 20, 1 SAY SPACE(78)
+            @ 20, 10 SAY 'GRAND TOTAL'
+            @ 20, 34 SAY gtl1 PICTURE '#######.##'
+            @ 20, 45 SAY gtl2 PICTURE '#######.##'
+            if muser="ADMIN" .OR. muser="BERDY"
+               @ 20, 56 SAY gtl3 PICTURE '#######.##'
+               @ 20, 67 SAY gtl4 PICTURE '#######.##'
+            else
+               @ 20, 56 SAY '   ---    '
+               @ 20, 67 SAY '   ---    '
+            endif
+        CASE choice='P'
+            pg= 1
+            STORE 0.00 TO stl1, stl2, stl3, stl4, gtl1, gtl2, gtl3, gtl4
+            DO WHILE .T.
+                &C_MESSAGE
+                @ 23, 50 SAY '...Printing'
+                SET CONSOLE OFF
+                SET DEVICE TO PRINTER
+                SET PRINTER ON
+                ?? CHR(27)+CHR(64)
+                ?? CHR(18)
+                cdate= CMONTH(DATE())+' '+STR(DAY(DATE()),2)+','+STR(YEAR(DATE()),4)
+                head= 'Sales Summary from '+DTOC(mfield1)+' to '+DTOC(mfield2)
+                head1= 'For Customer Code = '+LTRIM(TRIM(mfield3))
+                @ 3, 1 SAY 'Page '+LTRIM(STR(pg))
+                @ 3, (80-LEN(company))/2 SAY company
+                @ 4, (80-LEN(head))/2 SAY head
+                IF LEN(TRIM(mfield3))<>0
+                    @ 5, (80-LEN(head1))/2 SAY head1
+                ENDIF
+                ?? CHR(15)
+                @ 7, 7 SAY '----------------------------------------------------------------------------------------------------------------------'
+                @ 8, 7 SAY 'SI DATE        SI NO.           TERRITORY           SI AMOUNT         NET AMOUNT         TOTAL COST       GROSS PROFIT'
+                @ 9, 7 SAY '----------------------------------------------------------------------------------------------------------------------'
+                row= 9
+                DO WHILE .not. EOF().and.inv_d<=mfield2
+                    IF LEN(TRIM(mfield3))<>0
+                        IF mfield3<>cust_n
+                            SKIP
+                            LOOP
+                        ENDIF
+                    ENDIF
+                    stl1= stl1+inv_a
+                    gtl1= gtl1+inv_a
+                    stl2= stl2+net_a
+                    gtl2= gtl2+net_a
+                    stl3= stl3+inv_c
+                    gtl3= gtl3+inv_c
+                    stl4= stl4+net_a-inv_c
+                    gtl4= gtl4+net_a-inv_c
+                    row= row+1
+                    IF minv_d<>inv_d
+                        minv_d= inv_d
+                        @ row, 7 SAY inv_d PICTURE '@!'
+                    ENDIF
+                    @ row, 22 SAY inv_n PICTURE '@!'
+                    @ row, 39 SAY cust_s PICTURE '@!'
+                    @ row, 56 SAY inv_a PICTURE '#,###,###.##'
+                    @ row, 75 SAY net_a PICTURE '#,###,###.##'
+                    if muser="ADMIN" .OR. muser="BERDY"
+                       @ row, 94 SAY inv_c PICTURE '#,###,###.##'
+                       @ row, 113 SAY net_a-inv_c PICTURE '#,###,###.##'
+                    else
+                       @ row, 94  SAY '     ---    '
+                       @ row, 113 SAY '     ---    '
+                    endif
+                    SKIP
+                    IF row>55
+                        @ row+1, 55 SAY REPLICATE('-',70)
+                        @ row+2, 55 SAY stl1 PICTURE '##,###,###.##'
+                        @ row+2, 74 SAY stl2 PICTURE '##,###,###.##'
+                        if muser="ADMIN" .OR. muser="BERDY"
+                           @ row+2, 93 SAY stl3 PICTURE '##,###,###.##'
+                           @ row+2, 112 SAY stl4 PICTURE '##,###,###.##'
+                        else
+                           @ row+2, 93  SAY '      ---    '
+                           @ row+2, 112 SAY '      ---    '
+                        endif
+                        @ row+3, 75 SAY '...continued on page '+LTRIM(STR(pg+1))
+                        ?
+                        ?? CHR(18)
+                        EJECT
+                        SET PRINTER OFF
+                        SET DEVICE TO SCREEN
+                        SET CONSOLE ON
+                        &C_CLEAR
+                        @ 23, 0
+                        choice= ' '
+                        &C_CLEAR
+                        @ 23, 0
+                        @ 21, 0
+                        &C_MESSAGE
+                        @ 21, 20 SAY ' Press <A> to Abort, any key to continue.' GET choice PICTURE '!'
+                        READ
+                        IF choice='A'
+                            SET CENTURY Off
+                            CLOSE DATA
+                            RETURN
+                        ENDIF
+                        &C_CLEAR
+                        @ 23, 0
+                        &C_MESSAGE
+                        @ 23, 50 SAY '...Printing'
+                        SET CONSOLE OFF
+                        SET DEVICE TO PRINTER
+                        SET PRINTER ON
+                        pg= pg+1
+                        stl= 0.00
+                        @ 3, 1 SAY 'Page '+LTRIM(STR(pg))
+                        @ 3, (80-LEN(head))/2 SAY head
+                        IF LEN(TRIM(mfield3))<>0
+                            @ 4, (80-LEN(head1))/2 SAY head1
+                        ENDIF
+                        ?? CHR(15)
+                        @ 6, 7 SAY '----------------------------------------------------------------------------------------------------------------------'
+                        @ 7, 7 SAY 'SI DATE        SI NO.           TERRITORY           SI AMOUNT         NET AMOUNT         TOTAL COST       GROSS PROFIT'
+                        @ 8, 7 SAY '----------------------------------------------------------------------------------------------------------------------'
+                        row= 8
+                    ENDIF
+                ENDDO
+                IF EOF().or.inv_d>mfield2
+                    IF pg>1
+                        @ row+1, 55 SAY REPLICATE('-',70)
+                        @ row+2, 55 SAY stl1 PICTURE '##,###,###.##'
+                        @ row+2, 74 SAY stl2 PICTURE '##,###,###.##'
+                        if muser="ADMIN" .OR. muser="BERDY"
+                           @ row+2, 93 SAY stl3 PICTURE '##,###,###.##'
+                           @ row+2, 112 SAY stl4 PICTURE '##,###,###.##'
+                        else
+                           @ row+2, 93  SAY '      ---    '
+                           @ row+2, 112 SAY '      ---    '
+                        endif   
+                        row= row+2
+                    ENDIF
+                    @ row+1, 55 SAY REPLICATE('=',70)
+                    @ row+2, 55 SAY gtl1 PICTURE '##,###,###.##'
+                    @ row+2, 74 SAY gtl2 PICTURE '##,###,###.##'
+                    if muser="ADMIN" .OR. muser="BERDY"
+                       @ row+2, 93 SAY gtl3 PICTURE '##,###,###.##'
+                       @ row+2, 112 SAY gtl4 PICTURE '##,###,###.##'
+                    else
+                       @ row+2, 93  SAY '      ---    '
+                       @ row+2, 112 SAY '      ---    '
+                    endif
+                    @ row+3, 55 SAY REPLICATE('=',70)
+                    ?
+                    ?? CHR(18)
+                    EJECT
+                    SET PRINTER OFF
+                    SET DEVICE TO SCREEN
+                    SET CONSOLE ON
+                    &C_CLEAR
+                    @ 23, 0
+                    EXIT
+                ENDIF
+            ENDDO
+        OTHERWISE
+            SET CENTURY Off
+            CLOSE DATA
+            RETURN
+    ENDCASE
+    choice= ' '
+    &C_CLEAR
+    @ 21, 0
+    &C_MESSAGE
+    @ 21, 24 SAY ' Return to Previous Menu (y/n). ' GET confirm PICTURE '!'
+    READ
+    IF confirm='N'
+        &C_CLEAR
+        @ 9, 1 CLEAR TO 19, 78
+        @ 21, 0
+        row= 9
+        LOOP
+    ELSE
+        CLOSE DATA
+        set cent off
+        RETURN
+    ENDIF
+ENDDO
+
+SET CENT OFF
+CLOSE DATA
+RETURN

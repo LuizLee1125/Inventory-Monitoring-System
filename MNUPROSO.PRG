@@ -1,0 +1,51 @@
+* program.....: Mnuproso.prg
+
+PRIVATE ALL LIKE PRG??
+PRIVATE ALL LIKE M_*
+prg1a= 'A] Work Space One      '
+prg1b= 'B] Work Space Two      '
+prg1c= 'C] Work Space Three    '
+prg1d= 'D] Work Space Four     '
+prg1e= 'E] Exit                '
+m_y_col1= 5
+m_y_col2= 0
+m_y_col3= 0
+m_col1= 29
+m_x= 1
+m_y= 1
+m_col= m_col1
+m_row= 8
+m_x_max= 1
+m_y_max= m_y_col1
+DO WHILE .T.
+    &C_CLEAR
+    CLEAR
+    &C_BRDR
+    @ 6, 28 TO 18, 52 DOUBLE
+    @ 5, 29 TO 7, 51 DOUBLE
+    &C_HEAD
+    @ 6, 30 SAY ' PROCESS SALES ORDER '
+    &C_OPTION
+    @ 9, 29 SAY prg1a
+    @ 10, 29 SAY prg1b
+    @ 11, 29 SAY prg1c
+    @ 12, 29 SAY prg1d
+    @ 13, 29 SAY prg1e
+    DO MENU3C
+    prg= choice
+    DO CASE
+        CASE choice='PRG1A'
+            DO PROSO1
+        CASE choice='PRG1B'
+            DO PROSO2
+        CASE choice='PRG1C'
+            DO PROSO3
+        CASE choice='PRG1D'
+            DO PROSO4
+        CASE choice='PRG1E'
+            RETURN
+    ENDCASE
+    CLOSE DATABASE
+    SELECT 1
+ENDDO
+ 
