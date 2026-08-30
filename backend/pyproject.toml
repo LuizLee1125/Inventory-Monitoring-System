@@ -1,0 +1,40 @@
+[tool.ruff]
+line-length = 96
+target-version = "py310"
+exclude = [".venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # import sorting
+    "B",         # bugbear
+    "UP",        # pyupgrade
+    "SIM",       # simplify
+    "DTZ",       # naive datetimes
+    "BLE",       # blind except
+    "RUF",       # ruff's own rules
+]
+
+ignore = [
+    # FastAPI's whole dependency system is `def route(user = Depends(...))`.
+    # B008 flags every route in the application; it is the correct idiom here.
+    "B008",
+    # The SQL in this project is built from fixed fragments with bound
+    # parameters for every value; the column and direction names that are
+    # interpolated come from server-side allow-lists, never from the request.
+    "S608",
+    # `params + [page_size, offset]` reads better at the query call sites than
+    # `[*params, page_size, offset]`, and the operands are always lists.
+    "RUF005",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# migrate.py deliberately swallows anything a malformed legacy record throws.
+"migrate.py" = ["BLE001"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"

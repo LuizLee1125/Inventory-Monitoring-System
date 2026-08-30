@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inventory Monitoring System</title>
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f4e79'/><text x='16' y='23' font-size='18' font-family='system-ui' font-weight='700' fill='white' text-anchor='middle'>M</text></svg>">
+</head>
+<body>
+
+<div id="boot" class="boot">Loading…</div>
+
+<!-- ------------------------------------------------------------- sign in -->
+<div id="login" class="login" hidden>
+  <form class="login-card" id="login-form" autocomplete="on">
+    <div class="login-brand">
+      <span class="mark">M</span>
+      <div>
+        <h1 id="login-company">Marina Trading</h1>
+        <p>Inventory Monitoring System</p>
+      </div>
+    </div>
+
+    <label class="field">
+      <span>User name</span>
+      <input name="username" autocomplete="username" autocapitalize="characters"
+             spellcheck="false" required autofocus>
+    </label>
+
+    <label class="field">
+      <span>Password</span>
+      <input name="password" type="password" autocomplete="current-password" required>
+    </label>
+
+    <p class="login-error" id="login-error" hidden></p>
+    <button class="btn primary block" type="submit">Sign in</button>
+    <p class="login-foot">Running since 1999 &middot; rebuilt for the web</p>
+  </form>
+</div>
+
+<!-- ---------------------------------------------------------------- shell -->
+<div id="shell" class="shell" hidden>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="mark">M</span>
+      <div class="brand-text">
+        <strong id="brand-company">Marina Trading</strong>
+        <span>Inventory System</span>
+      </div>
+    </div>
+    <nav id="nav" class="nav"></nav>
+    <div class="sidebar-foot">
+      <span id="version-tag"></span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn" id="menu-toggle" title="Menu" aria-label="Menu">☰</button>
+      <h2 id="page-title">Dashboard</h2>
+      <div class="topbar-right">
+        <span class="user-chip" id="user-chip"></span>
+        <button class="btn ghost sm" id="btn-password">Password</button>
+        <button class="btn ghost sm" id="btn-logout">Sign out</button>
+      </div>
+    </header>
+    <main class="page" id="page"></main>
+  </div>
+</div>
+
+<div id="toasts" class="toasts"></div>
+<div id="modal-root"></div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
