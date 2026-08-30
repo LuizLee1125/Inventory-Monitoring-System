@@ -9,7 +9,7 @@ import * as home from './views/home.js';
 import * as dashboard from './views/dashboard.js';
 import * as maintenance from './views/maintenance.js';
 import * as purge from './views/purge.js';
-import * as codes from './views/codes.js';
+import * as archive from './views/archive.js';
 import * as stock from './views/stock.js';
 import * as customers from './views/customers.js';
 import * as suppliers from './views/suppliers.js';
@@ -42,6 +42,7 @@ const NAV = [
     { path: '/purchases', label: 'Purchases', icon: '⇩', permission: 'purchase:read' },
     { path: '/returns', label: 'Sales Returns', icon: '↩', permission: 'return:read' },
     { path: '/collections', label: 'Collections', icon: '₱', permission: 'collection:read' },
+    { path: '/archive', label: 'Archived Records', icon: '⛃', permission: 'report:read' },
   ] },
   { group: 'Reports', items: [
     { path: '/reports/price-inquiry', label: 'Price Inquiry', icon: '₱', permission: 'report:read' },
@@ -54,8 +55,9 @@ const NAV = [
   ] },
   { group: 'Maintenance', items: [
     { path: '/maintenance', label: 'Backup & Database', icon: '⛁', permission: 'maintenance:run' },
-    { path: '/maintenance/codes', label: 'Code Revisions', icon: '✎', permission: 'maintenance:run' },
     { path: '/maintenance/purge', label: 'Purging of Records', icon: '⌫', permission: 'maintenance:run' },
+    { path: '/archive/summary', label: 'Archive Inquiry', icon: '⛃', permission: 'report:read' },
+    { path: '/reports/depleted', label: 'Depleted Stocks', icon: '↓', permission: 'report:read' },
     { path: '/admin', label: 'Users & Audit', icon: '⚙', permission: 'admin:users' },
   ] },
 ];
@@ -122,7 +124,9 @@ function registerRoutes() {
   route('/overview', guard('report:read', dashboard));
   route('/maintenance', guard('maintenance:run', maintenance));
   route('/maintenance/purge', guard('maintenance:run', purge));
-  route('/maintenance/codes', guard('maintenance:run', codes));
+  route('/archive', guard('report:read', archive));
+  route('/archive/summary', guard('report:read', archive));
+  route('/archive/:kind/:number', guard('report:read', archive));
   route('/stock', guard('stock:read', stock));
   route('/stock/:code', guard('stock:read', stock));
   route('/customers', guard('customer:read', customers));
@@ -179,7 +183,6 @@ async function showShell() {
 
   buildNav();
   setupSearch();
-  refreshAlerts();
   if (started) resolve();
 
   if (session.user.must_change_password) {
@@ -192,23 +195,6 @@ function initials(name) {
   if (!parts.length) return '··';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-/** The bell counts what actually needs a person: overdue money and short stock. */
-async function refreshAlerts() {
-  const badge = $('#bell-count');
-  if (!can('report:read')) { badge.hidden = true; return; }
-  try {
-    const dash = await api.get('/reports/dashboard');
-    const overdue = (dash.receivable?.over_90 || 0) > 0 ? 1 : 0;
-    const short = dash.stock?.needs_attention || 0;
-    const expiring = dash.stock?.expiring || 0;
-    const total = overdue + (short > 0 ? 1 : 0) + (expiring > 0 ? 1 : 0);
-    badge.textContent = String(total);
-    badge.hidden = total === 0;
-  } catch {
-    badge.hidden = true;
-  }
 }
 
 function roleLabel() {
@@ -306,8 +292,6 @@ function wireChrome() {
     changePassword(false);
   });
   $('#menu-toggle').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
-
-  $('#btn-alerts').addEventListener('click', () => { window.location.hash = '#/reports/expiring'; });
 
   const account = $('#btn-account');
   account.addEventListener('click', (event) => {

@@ -45,6 +45,8 @@ const COLUMNS = [
         desc: 'Goods back, credit against the invoice' },
       { key: 'G', label: 'Collections', path: '/collections', permission: 'collection:read',
         desc: 'Payments applied to open invoices' },
+      { key: 'H', label: 'Archived Records', path: '/archive', permission: 'report:read',
+        desc: 'Documents purged out of the working files', badge: 'archive' },
     ],
   },
   {
@@ -87,18 +89,18 @@ const COLUMNS = [
         desc: 'Sign out of the system' },
       { key: '2', label: 'Purging of Records', path: '/maintenance/purge',
         permission: 'maintenance:run', desc: 'Remove settled history, if you want to' },
-      { key: '3', label: 'Code Revisions', path: '/maintenance/codes',
-        permission: 'maintenance:run', desc: 'Rename a code everywhere at once' },
-      { key: '4', label: 'Database Check', path: '/maintenance', permission: 'maintenance:run',
-        desc: 'The successor to ReIndex Files' },
+      { key: '3', label: 'Users & Audit', path: '/admin', permission: 'admin:users',
+        desc: 'Accounts, roles, who did what', badge: 'users' },
+      { key: '4', label: 'ReIndex Files', path: '/maintenance', permission: 'maintenance:run',
+        desc: 'Verify the database and refresh statistics' },
       { key: '5', label: 'Back-up Files', path: '/maintenance', permission: 'maintenance:run',
         desc: 'Copy the database while people work', badge: 'backup_age' },
       { key: '6', label: 'Expiration Inquiry', path: '/reports/expiring',
         permission: 'report:read', desc: 'Expiring and expired lots', badge: 'expiring' },
       { key: '7', label: 'Depleted Stocks', path: '/reports/depleted', permission: 'report:read',
         desc: 'At or below the reorder point' },
-      { key: '8', label: 'Users & Audit', path: '/admin', permission: 'admin:users',
-        desc: 'Accounts, roles, who did what', badge: 'users' },
+      { key: '8', label: 'Archive Inquiry', path: '/archive/summary', permission: 'report:read',
+        desc: 'What the archive holds, year by year' },
       { key: '9', label: 'Change Password', action: 'password', permission: 'report:read',
         desc: 'Choose a new one for this account' },
     ],
@@ -168,15 +170,16 @@ export async function render(container) {
   setTitle('Home');
   detachShortcuts?.();
 
-  const [dash, admin] = await Promise.all([
+  const [dash, admin, arc] = await Promise.all([
     api.get('/reports/dashboard'),
     can('admin:users') ? api.get('/admin/stats').catch(() => null) : Promise.resolve(null),
+    api.get('/archive/summary').catch(() => null),
   ]);
   const maint = can('maintenance:run')
     ? await api.get('/maintenance/status').catch(() => null)
     : null;
 
-  const badges = buildBadges(dash, admin, maint);
+  const badges = buildBadges(dash, admin, maint, arc);
   const focus = focusFor();
   const columns = COLUMNS
     .map((column) => ({
@@ -282,7 +285,7 @@ function panel(column, badges) {
   ]);
 }
 
-function buildBadges(dash, admin, maint) {
+function buildBadges(dash, admin, maint, arc) {
   const stock = dash.stock || {};
   const ar = dash.receivable || {};
   const shortages = stock.needs_attention || 0;
@@ -298,6 +301,9 @@ function buildBadges(dash, admin, maint) {
   if (ar.over_90 > 0) badges.overdue = { text: 'overdue', tone: 'bad' };
   if (stock.expiring) badges.expiring = { text: `${count(stock.expiring)} expiring`, tone: 'warn' };
   if (admin?.rows?.users) badges.users = { text: `${count(admin.rows.users)} users`, tone: '' };
+
+  const archived = (arc?.documents || []).reduce((sum, d) => sum + (d.rows || 0), 0);
+  if (archived) badges.archive = { text: `${count(archived)} on file`, tone: '' };
 
   if (maint) {
     const last = maint.last_backup;

@@ -505,6 +505,144 @@ def migrate_moves(conn, since: str | None) -> tuple[int, int]:
     return n_moves, n_lines
 
 
+def migrate_archive(conn) -> dict[str, int]:
+    """Bring the legacy O_* files across as a read-only archive.
+
+    These are the documents the DOS system purged out of the working set over
+    twenty-five years - 413,000 invoices and 892,000 movements that would
+    otherwise be lost when the .DBF files are retired.
+    """
+    counts: dict[str, int] = {}
+
+    def stream(name, sql, build, batch_size=20000):
+        src = table(name)
+        if src is None:
+            return 0
+        total, batch = 0, []
+        for rec in src:
+            row = build(rec)
+            if row is None:
+                continue
+            batch.append(row)
+            if len(batch) >= batch_size:
+                conn.executemany(sql, batch)
+                total += len(batch)
+                batch.clear()
+                if total % 200_000 == 0:
+                    conn.execute("COMMIT")
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    conn.execute("BEGIN IMMEDIATE")
+                    print(f"    ... {name} {total:,}", flush=True)
+        if batch:
+            conn.executemany(sql, batch)
+            total += len(batch)
+        return total
+
+    counts["invoices"] = stream(
+        "O_SIFYL",
+        "INSERT OR IGNORE INTO archived_invoices(inv_no, customer_code, customer_name,"
+        " address, city, inv_date, terms_text, salesman, remarks, gross, net_amount,"
+        " cost_amount, paid_amount, balance, status, created_by)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        lambda r: (
+            S(r.get("INV_N"), upper=True), S(r.get("CUST_N"), upper=True), S(r.get("CUST_M")),
+            S(r.get("CUST_AD")), S(r.get("CUST_CT")), D(r.get("INV_D")) or "1900-01-01",
+            S(r.get("CUST_TP")), S(r.get("CUST_S"), upper=True), S(r.get("SI_REM")),
+            N(r.get("INV_A")), N(r.get("NET_A")), N(r.get("INV_C")), N(r.get("INV_PAY")),
+            N(r.get("INV_BAL")),
+            "PAID" if S(r.get("PAID"), upper=True) == "Y" else "OPEN",
+            S(r.get("USER_M"), upper=True),
+        ) if S(r.get("INV_N")) else None)
+
+    counts["purchases"] = stream(
+        "O_PURFYL",
+        "INSERT OR IGNORE INTO archived_purchases(pur_no, supplier_code, supplier_name,"
+        " pur_date, terms_text, remarks, gross, net_amount, created_by)"
+        " VALUES (?,?,?,?,?,?,?,?,?)",
+        lambda r: (
+            S(r.get("INV_N"), upper=True), S(r.get("SPLYR_N"), upper=True), S(r.get("SPLYR_M")),
+            D(r.get("INV_D")) or "1900-01-01", S(r.get("SPLYR_TP")), S(r.get("INV_REM")),
+            N(r.get("INV_A")), N(r.get("NET_A")), S(r.get("USER_M"), upper=True),
+        ) if S(r.get("INV_N")) else None)
+
+    counts["returns"] = stream(
+        "O_SRFYL",
+        "INSERT OR IGNORE INTO archived_returns(sr_no, ref_invoice, customer_code,"
+        " customer_name, sr_date, remarks, net_amount, status, created_by)"
+        " VALUES (?,?,?,?,?,?,?,?,?)",
+        lambda r: (
+            S(r.get("INV_N"), upper=True), S(r.get("RINV_N"), upper=True),
+            S(r.get("CUST_N"), upper=True), S(r.get("CUST_M")),
+            D(r.get("INV_D")) or "1900-01-01", S(r.get("SI_REM")), N(r.get("NET_A")),
+            "PAID" if S(r.get("PAID"), upper=True) == "Y" else "OPEN",
+            S(r.get("USER_M"), upper=True),
+        ) if S(r.get("INV_N")) else None)
+
+    counts["collections"] = stream(
+        "O_COLFYL",
+        "INSERT OR IGNORE INTO archived_collections(col_no, customer_code, customer_name,"
+        " col_date, remarks, amount, net_amount, created_by) VALUES (?,?,?,?,?,?,?,?)",
+        lambda r: (
+            S(r.get("COLEC_N"), upper=True), S(r.get("CUST_N"), upper=True), S(r.get("CUST_M")),
+            D(r.get("COLEC_D")) or "1900-01-01", S(r.get("COLEC_REM")), N(r.get("COLEC_A")),
+            N(r.get("NET_A")) or N(r.get("COLEC_A")), S(r.get("USER_M"), upper=True),
+        ) if S(r.get("COLEC_N")) else None)
+
+    move_sql = (
+        "INSERT INTO archived_moves(move_type, doc_no, doc_date, stock_code, description,"
+        " qty, unit, unit_cost, unit_price, line_total, customer_code, supplier_code,"
+        " lot_no, expiry_date, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    )
+
+    def move_row(r):
+        code = S(r.get("STK_N"), upper=True)
+        if not code:
+            return None
+        move_type = MOVE_TYPES.get(S(r.get("TRANS_C"), upper=True), "ADJUST")
+        qty = N(r.get("ISSUE_Q"))
+        return (
+            move_type, S(r.get("TRANS_N"), upper=True), D(r.get("TRANS_D")) or "1900-01-01",
+            code, S(r.get("STK_M")), -qty if move_type == "SALE" else qty,
+            S(r.get("ISSUE_U"), upper=True), N(r.get("ISSUE_CP")), N(r.get("ISSUE_P")),
+            N(r.get("T_PRYS")), S(r.get("CUST_N"), upper=True), S(r.get("SPLYR_N"), upper=True),
+            S(r.get("LOT_N")), D(r.get("EXPIRY_D")), S(r.get("USER_M"), upper=True),
+        )
+
+    counts["movements"] = stream("O_TRN2", move_sql, move_row)
+    counts["movements"] += stream("O_STKREC", move_sql, move_row)
+
+    counts["customers"] = stream(
+        "O_CUSFYL",
+        "INSERT OR IGNORE INTO archived_customers(code, name, address, city, phone,"
+        " salesman, balance, last_txn) VALUES (?,?,?,?,?,?,?,?)",
+        lambda r: (
+            S(r.get("CUST_N"), upper=True), S(r.get("CUST_M")), S(r.get("CUST_AD")),
+            S(r.get("CUST_CT")), S(r.get("CUST_P")), S(r.get("CUST_S"), upper=True),
+            N(r.get("CUST_BAL")), D(r.get("CUST_LT")),
+        ) if S(r.get("CUST_N")) else None)
+
+    counts["stock"] = stream(
+        "O_STKFYL",
+        "INSERT OR IGNORE INTO archived_stock(code, name, division, category, unit,"
+        " cost, price_a, last_txn) VALUES (?,?,?,?,?,?,?,?)",
+        lambda r: (
+            S(r.get("STK_N"), upper=True), S(r.get("STK_M")), S(r.get("STK_DV"), upper=True),
+            S(r.get("STK_CAT"), upper=True), S(r.get("QTY_U"), upper=True),
+            N(r.get("STK_AC")) or N(r.get("STK_PC")), N(r.get("PRYS_A")), D(r.get("STK_LT")),
+        ) if S(r.get("STK_N")) else None)
+
+    counts["suppliers"] = stream(
+        "O_SPLYR",
+        "INSERT OR IGNORE INTO archived_suppliers(code, name, address, city, phone)"
+        " VALUES (?,?,?,?,?)",
+        lambda r: (
+            S(r.get("SPLYR_N"), upper=True), S(r.get("SPLYR_M")), S(r.get("SPLYR_AD")),
+            S(r.get("SPLYR_CT")), S(r.get("SPLYR_P")),
+        ) if S(r.get("SPLYR_N")) else None)
+
+    return counts
+
+
 def rebuild_customer_monthly(conn) -> int:
     """The legacy CUSTFYL cached 60 months of history in columns. Recompute it
     from the invoices and returns instead, so the year is never ambiguous."""
@@ -617,6 +755,8 @@ def main() -> None:
                                         "(YYYY-MM-DD); headers are always migrated")
     parser.add_argument("--skip-moves", action="store_true",
                         help="skip STKREC entirely (fast, but no invoice lines)")
+    parser.add_argument("--skip-archive", action="store_true",
+                        help="skip the legacy O_* archive files")
     parser.add_argument("--reset", action="store_true",
                         help="delete the existing database first")
     args = parser.parse_args()
@@ -652,6 +792,11 @@ def main() -> None:
             n_moves, n_lines = migrate_moves(conn, args.since)
             progress("stock movements", n_moves)
             progress("invoice lines", n_lines)
+
+        if not args.skip_archive:
+            print("\nArchive (the legacy O_* files)")
+            for label, n in migrate_archive(conn).items():
+                progress(f"archived {label}", n)
 
         print("\nDerived data")
         progress("customer monthly history", rebuild_customer_monthly(conn))

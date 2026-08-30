@@ -293,6 +293,7 @@ permissions allow:
 | **Collections** | Record a payment, apply it to specific open invoices or auto-allocate oldest first, reverse a bounced payment |
 | **Sales Returns** | Return goods to stock and credit the original invoice, defaulting to that invoice's prices |
 | **Purchases** | Receive supplier deliveries into stock, roll the moving-average cost forward, record supplier payments |
+| **Archived Records** | The legacy `O_*` files, browsable and searchable: 413,361 archived invoices, 39,179 purchases, 30,987 returns, 38,782 collections and 895,023 movements, with the line detail behind each. Read-only — this is the record of what happened |
 
 ### Master files
 
@@ -344,11 +345,6 @@ Neither restriction survives:
 
 A backup on the same disk does not survive that disk failing — copy them off the machine as well.
 
-**Code Revisions** (item 3) — renaming a stock, customer or supplier code used to mean editing the
-master file and then every detail file that referenced it, with orphaned rows left behind if it was
-interrupted. Here it is one transaction across all of them: the screen first shows how many rows the
-rename would touch (a busy stock code reaches ~25,000), then moves them together or not at all.
-
 **Purging of Records** (item 2) — the original purged because `.DBF` files grew until the machine
 struggled. This database holds 2.5 million movements in one file without difficulty, so purging is
 now a choice rather than a chore, and most offices will never need it. When you do: pick a cut-off,
@@ -356,9 +352,12 @@ see exactly what would go, and confirm by typing `PURGE`. Only fully paid invoic
 collections and their movements are removed — anything still owed or cancelled is always kept — and
 it refuses to run at all unless a backup exists on disk.
 
-Two items from the original column are gone rather than reimplemented: **Set Printer Mode**, because
-printing is now the browser's own dialog, and **Archive Inquiry**, because there are no archive
-files to inquire into. Their slots (8 and 9) carry Users & Audit and Change Password instead.
+**Archive Inquiry** (item 8) — what the archive holds and the years it covers, with archived
+invoices broken down by year. The documents themselves are browsable under **Archived Records** on
+the Transactions column.
+
+One item from the original column is gone rather than reimplemented: **Set Printer Mode**, because
+printing is now the browser's own dialog. Its slot carries Change Password instead.
 
 ---
 
@@ -472,7 +471,8 @@ The API is self-documenting: with the server running, open **`/api/docs`**.
 | Collections | `GET /api/collections`, `/{id}`, `/open-invoices/{customer}`, `POST`, `POST /{id}/reverse` |
 | Reports | `/api/reports/dashboard`, `aging`, `sales`, `purchases`, `inventory`, `expiring`, `depleted`, `movers`, `collections`, `inactive-customers` |
 | Admin | `/api/admin/users`, `roles`, `sessions`, `audit`, `stats` |
-| Maintenance | `GET /api/maintenance/status`, `code-usage`, `purge-preview`; `POST /api/maintenance/backup`, `check`, `compact`, `code-revision`, `purge` |
+| Maintenance | `GET /api/maintenance/status`, `purge-preview`; `POST /api/maintenance/backup`, `check`, `compact`, `purge` |
+| Archive | `GET /api/archive/summary`, `/api/archive/{kind}`, `/api/archive/{kind}/{number}`, `/api/archive/moves/by-item/{code}` |
 
 ---
 
@@ -515,8 +515,8 @@ frontend/               browser application, no build step
     views/
       home.js           the role-aware launcher that replaces the DOS main menu
       maintenance.js    backup and database housekeeping
-      codes.js          code revisions
       purge.js          purging of records
+      archive.js        archived records and archive inquiry
       …                 one module per remaining screen
 
 database/               ims.sqlite and backups/ (both gitignored)

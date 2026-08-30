@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__, config, db, security
 from .routers import (
     admin,
+    archive,
     auth,
     collections,
     customers,
@@ -70,7 +71,7 @@ def create_app() -> FastAPI:
     )
 
     for router in (auth, stock, customers, suppliers, invoices, purchases,
-                   returns, collections, reports, admin, maintenance):
+                   returns, collections, reports, admin, maintenance, archive):
         app.include_router(router.router, prefix="/api")
 
     @app.middleware("http")
@@ -99,6 +100,14 @@ def create_app() -> FastAPI:
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Not found"}, status_code=404)
         return FileResponse(config.STATIC_DIR / "index.html")
+
+    # Anything under /api that no router claimed is an API error, not a file.
+    # Without this the static mount below catches it and answers 405 for a POST,
+    # because StaticFiles only serves GET and HEAD.
+    @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+                   include_in_schema=False)
+    def unknown_api(rest: str) -> JSONResponse:
+        return JSONResponse({"detail": f"No such endpoint: /api/{rest}"}, status_code=404)
 
     app.mount("/", StaticFiles(directory=config.STATIC_DIR, html=True), name="static")
     return app
