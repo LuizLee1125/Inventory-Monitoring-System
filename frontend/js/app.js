@@ -3,8 +3,11 @@
 import { api, onUnauthorized } from './api.js';
 import { $, clear, el, field, input, modal, reportError, toast } from './ui.js';
 import { resolve, route, setNotFound, start } from './router.js';
+import { setupSearch } from './omni.js';
 
+import * as home from './views/home.js';
 import * as dashboard from './views/dashboard.js';
+import * as maintenance from './views/maintenance.js';
 import * as stock from './views/stock.js';
 import * as customers from './views/customers.js';
 import * as suppliers from './views/suppliers.js';
@@ -21,27 +24,33 @@ export const can = (permission) => Boolean(session.user?.permissions?.includes(p
 
 /* ----------------------------------------------------------- navigation -- */
 
+// The sidebar keeps the DOS menu's three groupings, because that is the
+// taxonomy the office already knows. Master files sat inside Transactions
+// there too — Stock File, Customer File and Supplier File were items A, B
+// and C — so they stay grouped that way rather than being split out.
 const NAV = [
-  { group: 'Transactions', items: [
-    { path: '/', label: 'Dashboard', icon: '▤', permission: 'report:read' },
-    { path: '/invoices', label: 'Invoices', icon: '▦', permission: 'invoice:read' },
-    { path: '/collections', label: 'Collections', icon: '₱', permission: 'collection:read' },
-    { path: '/returns', label: 'Sales Returns', icon: '↩', permission: 'return:read' },
-    { path: '/purchases', label: 'Purchases', icon: '⇩', permission: 'purchase:read' },
+  { group: '', items: [
+    { path: '/', label: 'Home', icon: '⌂', permission: 'report:read' },
   ] },
-  { group: 'Master files', items: [
-    { path: '/stock', label: 'Stock', icon: '▣', permission: 'stock:read' },
-    { path: '/customers', label: 'Customers', icon: '☺', permission: 'customer:read' },
-    { path: '/suppliers', label: 'Suppliers', icon: '⌂', permission: 'supplier:read' },
+  { group: 'Transactions', items: [
+    { path: '/stock', label: 'Stock File', icon: '▣', permission: 'stock:read' },
+    { path: '/customers', label: 'Customer File', icon: '☺', permission: 'customer:read' },
+    { path: '/suppliers', label: 'Supplier File', icon: '⌂', permission: 'supplier:read' },
+    { path: '/invoices', label: 'Invoices', icon: '▦', permission: 'invoice:read' },
+    { path: '/purchases', label: 'Purchases', icon: '⇩', permission: 'purchase:read' },
+    { path: '/returns', label: 'Sales Returns', icon: '↩', permission: 'return:read' },
+    { path: '/collections', label: 'Collections', icon: '₱', permission: 'collection:read' },
   ] },
   { group: 'Reports', items: [
-    { path: '/reports/aging', label: 'AR Aging', icon: '⏱', permission: 'report:read' },
-    { path: '/reports/sales', label: 'Sales', icon: '↗', permission: 'report:read' },
+    { path: '/reports/aging', label: 'Accounts Receivable', icon: '⏱', permission: 'report:read' },
+    { path: '/reports/sales', label: 'Sales Summary', icon: '↗', permission: 'report:read' },
     { path: '/reports/inventory', label: 'Inventory', icon: '≡', permission: 'report:read' },
-    { path: '/reports/expiring', label: 'Expiry & Stock Alerts', icon: '⚑', permission: 'report:read' },
+    { path: '/reports/expiring', label: 'Expiry & Alerts', icon: '⚑', permission: 'report:read' },
+    { path: '/overview', label: 'Overview', icon: '▤', permission: 'report:read' },
   ] },
-  { group: 'System', items: [
+  { group: 'Maintenance', items: [
     { path: '/admin', label: 'Users & Audit', icon: '⚙', permission: 'admin:users' },
+    { path: '/maintenance', label: 'Backup & Database', icon: '⛁', permission: 'maintenance:run' },
   ] },
 ];
 
@@ -51,7 +60,7 @@ function buildNav() {
   for (const section of NAV) {
     const items = section.items.filter((item) => can(item.permission));
     if (!items.length) continue;
-    nav.append(el('div', { class: 'nav-group', text: section.group }));
+    if (section.group) nav.append(el('div', { class: 'nav-group', text: section.group }));
     for (const item of items) {
       nav.append(el('a', { href: `#${item.path}`, dataset: { path: item.path } }, [
         el('span', { class: 'ico', text: item.icon }),
@@ -103,7 +112,9 @@ function guard(permission, view) {
 }
 
 function registerRoutes() {
-  route('/', guard('report:read', dashboard));
+  route('/', guard('report:read', home));
+  route('/overview', guard('report:read', dashboard));
+  route('/maintenance', guard('maintenance:run', maintenance));
   route('/stock', guard('stock:read', stock));
   route('/stock/:code', guard('stock:read', stock));
   route('/customers', guard('customer:read', customers));
@@ -151,14 +162,44 @@ async function showShell() {
 
   $('#brand-company').textContent = session.meta.company;
   $('#version-tag').textContent = `v${session.meta.version}`;
-  $('#user-chip').innerHTML =
-    `<b>${session.user.full_name || session.user.username}</b> · ${roleLabel()}`;
+
+  const who = session.user.full_name || session.user.username;
+  $('#avatar-initials').textContent = initials(who);
+  $('#btn-account').title = who;
+  $('#account-name').textContent = who;
+  $('#account-role').textContent = roleLabel();
 
   buildNav();
+  setupSearch();
+  refreshAlerts();
   if (started) resolve();
 
   if (session.user.must_change_password) {
     changePassword(true);
+  }
+}
+
+function initials(name) {
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '··';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/** The bell counts what actually needs a person: overdue money and short stock. */
+async function refreshAlerts() {
+  const badge = $('#bell-count');
+  if (!can('report:read')) { badge.hidden = true; return; }
+  try {
+    const dash = await api.get('/reports/dashboard');
+    const overdue = (dash.receivable?.over_90 || 0) > 0 ? 1 : 0;
+    const short = dash.stock?.needs_attention || 0;
+    const expiring = dash.stock?.expiring || 0;
+    const total = overdue + (short > 0 ? 1 : 0) + (expiring > 0 ? 1 : 0);
+    badge.textContent = String(total);
+    badge.hidden = total === 0;
+  } catch {
+    badge.hidden = true;
   }
 }
 
@@ -178,7 +219,7 @@ async function loadSession() {
   }
 }
 
-function changePassword(forced = false) {
+export function changePassword(forced = false) {
   const current = input('current_password', { type: 'password', required: true });
   const next = input('new_password', { type: 'password', required: true, minlength: 8 });
   const again = input('confirm', { type: 'password', required: true });
@@ -216,6 +257,14 @@ function changePassword(forced = false) {
 
 /* ----------------------------------------------------------------- boot -- */
 
+function closeAccountMenu() {
+  const menu = $('#account-menu');
+  if (menu && !menu.hidden) {
+    menu.hidden = true;
+    $('#btn-account').setAttribute('aria-expanded', 'false');
+  }
+}
+
 function wireChrome() {
   $('#login-form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -241,8 +290,26 @@ function wireChrome() {
     showLogin();
   });
 
-  $('#btn-password').addEventListener('click', () => changePassword(false));
+  $('#btn-password').addEventListener('click', () => {
+    closeAccountMenu();
+    changePassword(false);
+  });
   $('#menu-toggle').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
+
+  $('#btn-alerts').addEventListener('click', () => { window.location.hash = '#/reports/expiring'; });
+
+  const account = $('#btn-account');
+  account.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const menu = $('#account-menu');
+    const opening = menu.hidden;
+    menu.hidden = !opening;
+    account.setAttribute('aria-expanded', String(opening));
+  });
+  document.addEventListener('click', closeAccountMenu);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeAccountMenu();
+  });
 
   onUnauthorized(() => {
     if (session.user) {

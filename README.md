@@ -27,7 +27,11 @@ Data       Migrated from 67 legacy .DBF tables: 1,735 customers, 2,137 stock ite
 - **Proper accounts.** Salted PBKDF2 password hashes and a role/permission matrix replace the legacy
   plaintext passwords and single "which menu can you open" field.
 - **A full audit trail.** Who changed what, when, and from where.
-- **Light and dark themes**, and a print stylesheet for invoices and reports.
+- **One search box for everything.** `Ctrl K` from any screen searches stock, customers and
+  invoices at once and takes you to the record — the DOS system made you pick the right screen
+  first.
+- **Light by default**, dark when the operating system asks for it, and a print stylesheet for
+  invoices and reports.
 
 ---
 
@@ -69,7 +73,7 @@ The legacy `.DBF` files are only ever read. Nothing writes back to them.
 ### 3. Start the server
 
 ```bash
-start.bat
+.\start.bat
 ```
 
 It prints where it is listening:
@@ -85,7 +89,7 @@ Open **Local** on this PC, or the **Network** address from any other PC on the s
 the window stops the server. To use a different port:
 
 ```bash
-start.bat 9000
+.\start.bat 9000
 ```
 
 ### 4. Sign in
@@ -247,11 +251,42 @@ Notes on scope and safety:
 
 ## What it does
 
+### Home
+
+The successor to the DOS main menu, and the first thing everyone sees.
+
+The three columns are kept — **Transactions, Reports, Maintenance** — because after twenty-five
+years that grouping is how the office thinks about the work. So are the **letter keys**: pressing
+`G` for Collections or `D` for Invoices is muscle memory for people who have done it every working
+day since 1999, and it still works. Each tile shows its key, and the keys are only bound while Home
+is open.
+
+What the character-mode menu could never do is tell you anything before you opened a screen. Here
+the tiles carry live counts — how many invoices are open, how many items are below their reorder
+point, how long since the last backup — above a strip showing receivables, over-90 exposure, sales
+this month and stock needing attention.
+
+Above it sits a fixed bar carrying the search box, an alert bell counting what needs a person
+(overdue money, short stock, expiring lots), and the account menu.
+
+The screen is not the same for everyone. Each role gets the one action it performs all day as a
+button in the header, its own tiles floated to the top of the column, and only the tiles its
+permissions allow:
+
+| Role | Header action | First in Transactions |
+| --- | --- | --- |
+| `admin` | — (everything is available) | Stock, Customers, Suppliers, … |
+| `manager` | Open accounts receivable | Stock, Invoices |
+| `invoicing` | Raise an invoice | Invoices, Customers, Sales Returns |
+| `ar` | Record a payment | Collections, Customers, Invoices |
+| `sales` | Look up an item | Stock, Customers, Invoices |
+| `inventory` | Receive a delivery | Stock, Purchases, Suppliers |
+
 ### Transactions
 
 | Screen | What it does |
 | --- | --- |
-| **Dashboard** | Receivables, over-90 exposure, month and year sales, stock value and alerts, 12-month sales chart, latest invoices and payments |
+| **Overview** | Receivables, over-90 exposure, month and year sales, stock value and alerts, 12-month sales chart, latest invoices and payments |
 | **Invoices** | Browse and filter, view with full line detail and payment history, create with live stock and customer lookup, edit the header, cancel with full reversal |
 | **Collections** | Record a payment, apply it to specific open invoices or auto-allocate oldest first, reverse a bounced payment |
 | **Sales Returns** | Return goods to stock and credit the original invoice, defaulting to that invoice's prices |
@@ -274,10 +309,22 @@ Inactive customers.
 
 Every report prints from the browser with a dedicated print stylesheet.
 
-### System
+### Maintenance
 
-Users and roles, live sessions ("who is signed in right now" — something the DOS system could never
-show), the audit trail, and database row counts.
+**Users & Audit** — accounts and roles, live sessions ("who is signed in right now", something the
+DOS system could never show), the audit trail, and row counts per table.
+
+**Backup & Database** — the successor to the DOS Maintenance column, where "Back-up Files" meant a
+Monday-to-Saturday rotation of floppies and "ReIndex Files" required everyone out of the system.
+Neither restriction survives:
+
+| Action | What it does |
+| --- | --- |
+| Back up now | Copies the live database using SQLite's own backup API, so the office keeps working. Files land in `database\backups`; the newest 14 are kept. A 1.2 GB database takes about 7 seconds. |
+| Run check | Verifies every page and refreshes the query planner's statistics. There are no indexes to rebuild — SQLite maintains its own. Reads the whole file, so allow a minute or two and expect it to slow others down while it runs. |
+| Compact | Reclaims free pages by rewriting the file. Needs as much spare disk as the database occupies; do it out of hours. |
+
+A backup on the same disk does not survive that disk failing — copy them off the machine as well.
 
 ---
 
@@ -288,7 +335,7 @@ onto explicit roles:
 
 | Role | Legacy equivalent | Can do |
 | --- | --- | --- |
-| `admin` | H — Main Menu | Everything, including user management |
+| `admin` | H — Main Menu | Everything, including user management and maintenance |
 | `manager` | E — Inventory System | Everything except user management |
 | `inventory` | D, J — Inventory Monitoring | Read all; write stock, suppliers, purchases |
 | `invoicing` | C, I — Invoicing System | Read all; write invoices, customers, returns |
@@ -391,6 +438,7 @@ The API is self-documenting: with the server running, open **`/api/docs`**.
 | Collections | `GET /api/collections`, `/{id}`, `/open-invoices/{customer}`, `POST`, `POST /{id}/reverse` |
 | Reports | `/api/reports/dashboard`, `aging`, `sales`, `purchases`, `inventory`, `expiring`, `depleted`, `movers`, `collections`, `inactive-customers` |
 | Admin | `/api/admin/users`, `roles`, `sessions`, `audit`, `stats` |
+| Maintenance | `GET /api/maintenance/status`, `POST /api/maintenance/backup`, `check`, `compact` |
 
 ---
 
@@ -427,11 +475,15 @@ frontend/               browser application, no build step
   js/
     api.js              fetch wrapper, 401 and 409 handling
     ui.js               DOM helpers, tables, modals, toasts, type-ahead
+    omni.js             the top-bar search across stock, customers and invoices
     router.js           hash router
     app.js              bootstrap, session, navigation
-    views/              one module per screen
+    views/
+      home.js           the role-aware launcher that replaces the DOS main menu
+      maintenance.js    backup and database housekeeping
+      …                 one module per remaining screen
 
-database/               ims.sqlite lives here (gitignored)
+database/               ims.sqlite and backups/ (both gitignored)
 
 legacy/                 the FoxPro/DOS system it replaces
   *.PRG                 256 source programs

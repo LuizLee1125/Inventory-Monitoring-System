@@ -35,12 +35,18 @@ def dashboard(_user: dict = Depends(require("report:read"))) -> dict:
         "SELECT ROUND(SUM(net_amount), 2) AS sales FROM invoices "
         "WHERE status <> 'CANCELLED' AND inv_date >= date('now', 'start of year')") or {}
 
+    # `needs_attention` is a distinct count: an item that is both depleted and
+    # below its reorder point is one problem, not two. Summing the two columns
+    # overstates it, which on this data reported more items than exist.
     stock = db.query_one(
         "SELECT COUNT(*) AS items, "
         "ROUND(SUM(qty_on_hand * cost), 2) AS value, "
         "SUM(CASE WHEN reorder_point > 0 AND qty_on_hand <= reorder_point "
         "    THEN 1 ELSE 0 END) AS below_reorder, "
         "SUM(CASE WHEN qty_on_hand <= 0 THEN 1 ELSE 0 END) AS depleted, "
+        "SUM(CASE WHEN qty_on_hand <= 0 "
+        "      OR (reorder_point > 0 AND qty_on_hand <= reorder_point) "
+        "    THEN 1 ELSE 0 END) AS needs_attention, "
         "SUM(CASE WHEN expiry_date IS NOT NULL AND expiry_date < date('now', '+90 day') "
         "    THEN 1 ELSE 0 END) AS expiring "
         "FROM stock WHERE is_active = 1") or {}

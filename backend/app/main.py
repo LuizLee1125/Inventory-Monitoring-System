@@ -16,6 +16,7 @@ from .routers import (
     collections,
     customers,
     invoices,
+    maintenance,
     purchases,
     reports,
     returns,
@@ -69,7 +70,7 @@ def create_app() -> FastAPI:
     )
 
     for router in (auth, stock, customers, suppliers, invoices, purchases,
-                   returns, collections, reports, admin):
+                   returns, collections, reports, admin, maintenance):
         app.include_router(router.router, prefix="/api")
 
     @app.middleware("http")

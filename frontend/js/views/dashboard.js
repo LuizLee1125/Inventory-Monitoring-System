@@ -69,9 +69,9 @@ export async function render(container) {
         `${count(data.month?.invoices)} invoices`),
       stat('Sales this year', money(data.year?.sales), 'Net of discounts'),
       stat('Stock value', money(stock.value), `${count(stock.items)} active items`),
-      stat('Needs attention', count((stock.below_reorder || 0) + (stock.depleted || 0)),
+      stat('Needs attention', count(stock.needs_attention),
         `${count(stock.depleted)} depleted · ${count(stock.expiring)} expiring`,
-        (stock.below_reorder || stock.depleted) ? 'warn' : ''),
+        stock.needs_attention ? 'warn' : ''),
     ]),
 
     card(data.trend_is_recent === false

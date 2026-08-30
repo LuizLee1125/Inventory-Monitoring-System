@@ -75,6 +75,7 @@ PERMISSIONS = [
     "collection:read", "collection:write",
     "report:read",
     "admin:users",
+    "maintenance:run",
 ]
 
 _READ_ONLY = [p for p in PERMISSIONS if p.endswith(":read")]
