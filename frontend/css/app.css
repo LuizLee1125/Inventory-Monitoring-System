@@ -111,6 +111,106 @@
   --icon-download: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 3v9'/%3E%3Cpath d='m5.8 8.2 4.2 4.2 4.2-4.2'/%3E%3Cpath d='M3.4 15.6h13.2'/%3E%3C/svg%3E");
   --icon-folder: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.6 5.4a1.4 1.4 0 0 1 1.4-1.4h3l1.6 2h6a1.4 1.4 0 0 1 1.4 1.4v7.2a1.4 1.4 0 0 1-1.4 1.4H4a1.4 1.4 0 0 1-1.4-1.4Z'/%3E%3C/svg%3E");
 
+  /* --- the sidebar icon family -------------------------------------------
+     The nav used to carry a Unicode character per row — ⌂ ▣ ☺ ⎙ ⛃ ⌸ ⛁ ⌫ and
+     so on. Half of them have no glyph in Inter or Segoe UI, so Windows fell
+     through to Segoe UI Symbol or drew a notdef box; four of them were used
+     twice. It is the same mistake `⌕` and `▲`/`▼` were already corrected for
+     elsewhere in this file, and the fix is the same: draw them.
+
+     Every mark is 20×20, `1.7` stroke, round caps and joins — the geometry of
+     `--icon-user` above, so the sidebar, the login fields and the chart read as
+     one set. They are used as masks over `currentColor` and carry no colour,
+     which is why there is no dark twin of any of them.
+
+     `-on` is the active weight, and it is the SAME `d` at `2.5`. Nothing else
+     changes between the pair, so the two can never drift apart, and the mask
+     they cross-fade between is the animated form of NTC-TMS-Tauri's
+     `wght 350 → wght 500`. Adding an icon means adding both. */
+  --nav-home: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2.8 9.4 7.2-6 7.2 6'/%3E%3Cpath d='M4.9 8v7.9a1.1 1.1 0 0 0 1.1 1.1h8a1.1 1.1 0 0 0 1.1-1.1V8'/%3E%3C/svg%3E");
+  --nav-home-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2.8 9.4 7.2-6 7.2 6'/%3E%3Cpath d='M4.9 8v7.9a1.1 1.1 0 0 0 1.1 1.1h8a1.1 1.1 0 0 0 1.1-1.1V8'/%3E%3C/svg%3E");
+
+  --nav-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 2.9 3.5 6.4v7.2L10 17.1l6.5-3.5V6.4Z'/%3E%3Cpath d='m3.5 6.4 6.5 3.5 6.5-3.5'/%3E%3Cpath d='M10 9.9v7.2'/%3E%3C/svg%3E");
+  --nav-box-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 2.9 3.5 6.4v7.2L10 17.1l6.5-3.5V6.4Z'/%3E%3Cpath d='m3.5 6.4 6.5 3.5 6.5-3.5'/%3E%3Cpath d='M10 9.9v7.2'/%3E%3C/svg%3E");
+
+  --nav-users: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='7.6' cy='6.6' r='2.9'/%3E%3Cpath d='M12.9 16.6v-1.4a3 3 0 0 0-3-3H5.3a3 3 0 0 0-3 3v1.4'/%3E%3Cpath d='M13.4 3.9a3 3 0 0 1 0 5.4'/%3E%3Cpath d='M17.7 16.6v-1.4a3 3 0 0 0-2.2-2.9'/%3E%3C/svg%3E");
+  --nav-users-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='7.6' cy='6.6' r='2.9'/%3E%3Cpath d='M12.9 16.6v-1.4a3 3 0 0 0-3-3H5.3a3 3 0 0 0-3 3v1.4'/%3E%3Cpath d='M13.4 3.9a3 3 0 0 1 0 5.4'/%3E%3Cpath d='M17.7 16.6v-1.4a3 3 0 0 0-2.2-2.9'/%3E%3C/svg%3E");
+
+  --nav-truck: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.6 5.9a1.1 1.1 0 0 1 1.1-1.1h6.5a1.1 1.1 0 0 1 1.1 1.1v7.5H2.6Z'/%3E%3Cpath d='M11.3 8.5h2.6l2.7 2.7v2.2h-5.3Z'/%3E%3Ccircle cx='6.2' cy='15.3' r='1.6'/%3E%3Ccircle cx='14' cy='15.3' r='1.6'/%3E%3C/svg%3E");
+  --nav-truck-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.6 5.9a1.1 1.1 0 0 1 1.1-1.1h6.5a1.1 1.1 0 0 1 1.1 1.1v7.5H2.6Z'/%3E%3Cpath d='M11.3 8.5h2.6l2.7 2.7v2.2h-5.3Z'/%3E%3Ccircle cx='6.2' cy='15.3' r='1.6'/%3E%3Ccircle cx='14' cy='15.3' r='1.6'/%3E%3C/svg%3E");
+
+  --nav-invoice: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.1 2.9h6.2l4.3 4.2v9a1.1 1.1 0 0 1-1.1 1.1H5.1A1.1 1.1 0 0 1 4 16.1V4a1.1 1.1 0 0 1 1.1-1.1Z'/%3E%3Cpath d='M11.2 3v4.2h4.3'/%3E%3Cpath d='M6.7 11.2h6.5'/%3E%3Cpath d='M6.7 13.9h4.3'/%3E%3C/svg%3E");
+  --nav-invoice-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.1 2.9h6.2l4.3 4.2v9a1.1 1.1 0 0 1-1.1 1.1H5.1A1.1 1.1 0 0 1 4 16.1V4a1.1 1.1 0 0 1 1.1-1.1Z'/%3E%3Cpath d='M11.2 3v4.2h4.3'/%3E%3Cpath d='M6.7 11.2h6.5'/%3E%3Cpath d='M6.7 13.9h4.3'/%3E%3C/svg%3E");
+
+  --nav-printer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8.1V3.3h8v4.8'/%3E%3Cpath d='M6 14.4H4.6a1.4 1.4 0 0 1-1.4-1.4V9.5a1.4 1.4 0 0 1 1.4-1.4h10.8a1.4 1.4 0 0 1 1.4 1.4V13a1.4 1.4 0 0 1-1.4 1.4H14'/%3E%3Cpath d='M6 12.2h8v4.5H6Z'/%3E%3C/svg%3E");
+  --nav-printer-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8.1V3.3h8v4.8'/%3E%3Cpath d='M6 14.4H4.6a1.4 1.4 0 0 1-1.4-1.4V9.5a1.4 1.4 0 0 1 1.4-1.4h10.8a1.4 1.4 0 0 1 1.4 1.4V13a1.4 1.4 0 0 1-1.4 1.4H14'/%3E%3Cpath d='M6 12.2h8v4.5H6Z'/%3E%3C/svg%3E");
+
+  --nav-inbound: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.4 11.6v3.5a1.4 1.4 0 0 0 1.4 1.4h10.4a1.4 1.4 0 0 0 1.4-1.4v-3.5'/%3E%3Cpath d='M10 3.2v7.8'/%3E%3Cpath d='m6.6 7.6 3.4 3.4 3.4-3.4'/%3E%3C/svg%3E");
+  --nav-inbound-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.4 11.6v3.5a1.4 1.4 0 0 0 1.4 1.4h10.4a1.4 1.4 0 0 0 1.4-1.4v-3.5'/%3E%3Cpath d='M10 3.2v7.8'/%3E%3Cpath d='m6.6 7.6 3.4 3.4 3.4-3.4'/%3E%3C/svg%3E");
+
+  --nav-return: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.9 4.6 3.6 7.9l3.3 3.3'/%3E%3Cpath d='M3.6 7.9h8.1a4.4 4.4 0 0 1 0 8.8H7.4'/%3E%3C/svg%3E");
+  --nav-return-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.9 4.6 3.6 7.9l3.3 3.3'/%3E%3Cpath d='M3.6 7.9h8.1a4.4 4.4 0 0 1 0 8.8H7.4'/%3E%3C/svg%3E");
+
+  --nav-cash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.6' y='5.4' width='14.8' height='9.2' rx='1.6'/%3E%3Ccircle cx='10' cy='10' r='2.4'/%3E%3Cpath d='M5.6 8.3v3.4'/%3E%3Cpath d='M14.4 8.3v3.4'/%3E%3C/svg%3E");
+  --nav-cash-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.6' y='5.4' width='14.8' height='9.2' rx='1.6'/%3E%3Ccircle cx='10' cy='10' r='2.4'/%3E%3Cpath d='M5.6 8.3v3.4'/%3E%3Cpath d='M14.4 8.3v3.4'/%3E%3C/svg%3E");
+
+  --nav-archive: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.9' y='3.3' width='14.2' height='3.6' rx='1'/%3E%3Cpath d='M4.4 6.9v8.3a1.4 1.4 0 0 0 1.4 1.4h8.4a1.4 1.4 0 0 0 1.4-1.4V6.9'/%3E%3Cpath d='M8.2 10.4h3.6'/%3E%3C/svg%3E");
+  --nav-archive-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.9' y='3.3' width='14.2' height='3.6' rx='1'/%3E%3Cpath d='M4.4 6.9v8.3a1.4 1.4 0 0 0 1.4 1.4h8.4a1.4 1.4 0 0 0 1.4-1.4V6.9'/%3E%3Cpath d='M8.2 10.4h3.6'/%3E%3C/svg%3E");
+
+  --nav-tag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.2 3H4.6A1.6 1.6 0 0 0 3 4.6v5.6a1.6 1.6 0 0 0 .47 1.13l5.2 5.2a1.6 1.6 0 0 0 2.26 0l4.6-4.6a1.6 1.6 0 0 0 0-2.26l-5.2-5.2A1.6 1.6 0 0 0 10.2 3Z'/%3E%3Ccircle cx='6.9' cy='6.9' r='1.05'/%3E%3C/svg%3E");
+  --nav-tag-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.2 3H4.6A1.6 1.6 0 0 0 3 4.6v5.6a1.6 1.6 0 0 0 .47 1.13l5.2 5.2a1.6 1.6 0 0 0 2.26 0l4.6-4.6a1.6 1.6 0 0 0 0-2.26l-5.2-5.2A1.6 1.6 0 0 0 10.2 3Z'/%3E%3Ccircle cx='6.9' cy='6.9' r='1.05'/%3E%3C/svg%3E");
+
+  --nav-clipboard: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.7 3.9H6.2a1.4 1.4 0 0 0-1.4 1.4v10.3a1.4 1.4 0 0 0 1.4 1.4h7.6a1.4 1.4 0 0 0 1.4-1.4V5.3a1.4 1.4 0 0 0-1.4-1.4h-1.5'/%3E%3Crect x='7.7' y='2.6' width='4.6' height='2.8' rx='.9'/%3E%3Cpath d='M7.9 9.6h4.2'/%3E%3Cpath d='M7.9 12.6h3'/%3E%3C/svg%3E");
+  --nav-clipboard-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.7 3.9H6.2a1.4 1.4 0 0 0-1.4 1.4v10.3a1.4 1.4 0 0 0 1.4 1.4h7.6a1.4 1.4 0 0 0 1.4-1.4V5.3a1.4 1.4 0 0 0-1.4-1.4h-1.5'/%3E%3Crect x='7.7' y='2.6' width='4.6' height='2.8' rx='.9'/%3E%3Cpath d='M7.9 9.6h4.2'/%3E%3Cpath d='M7.9 12.6h3'/%3E%3C/svg%3E");
+
+  --nav-trend-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2.9 14 4.6-4.6 3 3L17 5.9'/%3E%3Cpath d='M12.6 5.9H17v4.4'/%3E%3C/svg%3E");
+  --nav-trend-up-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2.9 14 4.6-4.6 3 3L17 5.9'/%3E%3Cpath d='M12.6 5.9H17v4.4'/%3E%3C/svg%3E");
+
+  --nav-trend-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2.9 6 4.6 4.6 3-3L17 14.1'/%3E%3Cpath d='M12.6 14.1H17V9.7'/%3E%3C/svg%3E");
+  --nav-trend-down-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2.9 6 4.6 4.6 3-3L17 14.1'/%3E%3Cpath d='M12.6 14.1H17V9.7'/%3E%3C/svg%3E");
+
+  /* Two rules, not three, and the ticks stand well clear of them. At `2.5` a
+     stroke is 2.5 units wide, so anything under about 4 units of separation
+     closes up and the mark becomes a block — which is what a three-row version
+     of this did. The same limit is why the magnifier below carries nothing
+     inside it. */
+  --nav-checklist: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.8 6.2h7.3'/%3E%3Cpath d='M9.8 13.8h7.3'/%3E%3Cpath d='m2.9 6.1 1.3 1.3 2.3-2.5'/%3E%3Cpath d='m2.9 13.7 1.3 1.3 2.3-2.5'/%3E%3C/svg%3E");
+  --nav-checklist-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.8 6.2h7.3'/%3E%3Cpath d='M9.8 13.8h7.3'/%3E%3Cpath d='m2.9 6.1 1.3 1.3 2.3-2.5'/%3E%3Cpath d='m2.9 13.7 1.3 1.3 2.3-2.5'/%3E%3C/svg%3E");
+
+  --nav-lookup: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8.7' cy='8.7' r='5.8'/%3E%3Cpath d='m12.9 12.9 4.2 4.2'/%3E%3C/svg%3E");
+  --nav-lookup-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8.7' cy='8.7' r='5.8'/%3E%3Cpath d='m12.9 12.9 4.2 4.2'/%3E%3C/svg%3E");
+
+  --nav-clock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10' cy='10' r='7.1'/%3E%3Cpath d='M10 5.8V10l2.9 1.8'/%3E%3C/svg%3E");
+  --nav-clock-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10' cy='10' r='7.1'/%3E%3Cpath d='M10 5.8V10l2.9 1.8'/%3E%3C/svg%3E");
+
+  --nav-hourglass: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.6 3h8.8'/%3E%3Cpath d='M5.6 17h8.8'/%3E%3Cpath d='M6.9 3v2.6L10 8.9l3.1-3.3V3'/%3E%3Cpath d='M6.9 17v-2.6L10 11.1l3.1 3.3V17'/%3E%3C/svg%3E");
+  --nav-hourglass-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.6 3h8.8'/%3E%3Cpath d='M5.6 17h8.8'/%3E%3Cpath d='M6.9 3v2.6L10 8.9l3.1-3.3V3'/%3E%3Cpath d='M6.9 17v-2.6L10 11.1l3.1 3.3V17'/%3E%3C/svg%3E");
+
+  --nav-grid: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.9' y='2.9' width='6.1' height='6.1' rx='1.2'/%3E%3Crect x='11' y='2.9' width='6.1' height='6.1' rx='1.2'/%3E%3Crect x='2.9' y='11' width='6.1' height='6.1' rx='1.2'/%3E%3Crect x='11' y='11' width='6.1' height='6.1' rx='1.2'/%3E%3C/svg%3E");
+  --nav-grid-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.9' y='2.9' width='6.1' height='6.1' rx='1.2'/%3E%3Crect x='11' y='2.9' width='6.1' height='6.1' rx='1.2'/%3E%3Crect x='2.9' y='11' width='6.1' height='6.1' rx='1.2'/%3E%3Crect x='11' y='11' width='6.1' height='6.1' rx='1.2'/%3E%3C/svg%3E");
+
+  --nav-database: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cellipse cx='10' cy='5.1' rx='6.4' ry='2.6'/%3E%3Cpath d='M3.6 5.1v9.8c0 1.44 2.87 2.6 6.4 2.6s6.4-1.16 6.4-2.6V5.1'/%3E%3Cpath d='M16.4 10c0 1.44-2.87 2.6-6.4 2.6S3.6 11.44 3.6 10'/%3E%3C/svg%3E");
+  --nav-database-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cellipse cx='10' cy='5.1' rx='6.4' ry='2.6'/%3E%3Cpath d='M3.6 5.1v9.8c0 1.44 2.87 2.6 6.4 2.6s6.4-1.16 6.4-2.6V5.1'/%3E%3Cpath d='M16.4 10c0 1.44-2.87 2.6-6.4 2.6S3.6 11.44 3.6 10'/%3E%3C/svg%3E");
+
+  --nav-trash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.6 5.9h12.8'/%3E%3Cpath d='M8.2 5.9V4.4a1.2 1.2 0 0 1 1.2-1.2h1.2a1.2 1.2 0 0 1 1.2 1.2v1.5'/%3E%3Cpath d='M5.2 5.9v9.7a1.5 1.5 0 0 0 1.5 1.5h6.6a1.5 1.5 0 0 0 1.5-1.5V5.9'/%3E%3Cpath d='M8.4 9.2v4.9'/%3E%3Cpath d='M11.6 9.2v4.9'/%3E%3C/svg%3E");
+  --nav-trash-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.6 5.9h12.8'/%3E%3Cpath d='M8.2 5.9V4.4a1.2 1.2 0 0 1 1.2-1.2h1.2a1.2 1.2 0 0 1 1.2 1.2v1.5'/%3E%3Cpath d='M5.2 5.9v9.7a1.5 1.5 0 0 0 1.5 1.5h6.6a1.5 1.5 0 0 0 1.5-1.5V5.9'/%3E%3Cpath d='M8.4 9.2v4.9'/%3E%3Cpath d='M11.6 9.2v4.9'/%3E%3C/svg%3E");
+
+  --nav-archive-find: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.6' y='3.2' width='12.2' height='3.4' rx='1'/%3E%3Cpath d='M4 6.6v8.4a1.4 1.4 0 0 0 1.4 1.4h3.4'/%3E%3Ccircle cx='13.6' cy='13.4' r='3.2'/%3E%3Cpath d='m15.9 15.7 1.7 1.7'/%3E%3C/svg%3E");
+  --nav-archive-find-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2.6' y='3.2' width='12.2' height='3.4' rx='1'/%3E%3Cpath d='M4 6.6v8.4a1.4 1.4 0 0 0 1.4 1.4h3.4'/%3E%3Ccircle cx='13.6' cy='13.4' r='3.2'/%3E%3Cpath d='m15.9 15.7 1.7 1.7'/%3E%3C/svg%3E");
+
+  --nav-box-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.6' y='4.5' width='12.8' height='11' rx='1.4'/%3E%3Cpath d='M10 7.4v5'/%3E%3Cpath d='m7.6 10 2.4 2.4L12.4 10'/%3E%3C/svg%3E");
+  --nav-box-down-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.6' y='4.5' width='12.8' height='11' rx='1.4'/%3E%3Cpath d='M10 7.4v5'/%3E%3Cpath d='m7.6 10 2.4 2.4L12.4 10'/%3E%3C/svg%3E");
+
+  --nav-shield: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 2.9 4 5.1v4.3c0 3.7 2.5 7.1 6 7.7 3.5-.6 6-4 6-7.7V5.1Z'/%3E%3Ccircle cx='10' cy='8.6' r='1.9'/%3E%3Cpath d='M6.9 13.9a3.6 3.6 0 0 1 6.2 0'/%3E%3C/svg%3E");
+  --nav-shield-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 2.9 4 5.1v4.3c0 3.7 2.5 7.1 6 7.7 3.5-.6 6-4 6-7.7V5.1Z'/%3E%3Ccircle cx='10' cy='8.6' r='1.9'/%3E%3Cpath d='M6.9 13.9a3.6 3.6 0 0 1 6.2 0'/%3E%3C/svg%3E");
+
+  /* The three shell marks that are not in the nav but sit beside it. They were
+     `☰`, `⚙` and `⏻`, and had the same font problem. No `-on` pair: none of
+     them has an active state to cross-fade to. */
+  --icon-menu: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Cpath d='M3.4 6h13.2'/%3E%3Cpath d='M3.4 10h13.2'/%3E%3Cpath d='M3.4 14h13.2'/%3E%3C/svg%3E");
+  --icon-gear: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8.5 2.9h3l.35 2.05a5.2 5.2 0 0 1 1.35.78l1.95-.78 1.5 2.6-1.6 1.32a5.2 5.2 0 0 1 0 1.56l1.6 1.32-1.5 2.6-1.95-.78a5.2 5.2 0 0 1-1.35.78L11.5 17.1h-3l-.35-2.05a5.2 5.2 0 0 1-1.35-.78l-1.95.78-1.5-2.6 1.6-1.32a5.2 5.2 0 0 1 0-1.56l-1.6-1.32 1.5-2.6 1.95.78a5.2 5.2 0 0 1 1.35-.78Z'/%3E%3Ccircle cx='10' cy='10' r='2.4'/%3E%3C/svg%3E");
+  --icon-power: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 2.9v7.3'/%3E%3Cpath d='M14.6 5.6a6.5 6.5 0 1 1-9.2 0'/%3E%3C/svg%3E");
+
   --sidebar-w: 236px;
   --topbar-h: 60px;
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
@@ -582,7 +682,7 @@ a { color: var(--primary); }
 .brand-text strong { font-size: var(--fs-md); }
 .brand-text span { font-size: var(--fs-2xs); color: var(--text-faint); }
 
-.nav { flex: 1; overflow-y: auto; padding: var(--sp-3) var(--sp-2); }
+.nav { position: relative; flex: 1; overflow-y: auto; padding: var(--sp-3) var(--sp-2); }
 .nav-group {
   padding: var(--sp-4) var(--sp-3) var(--sp-1);
   font-size: var(--fs-2xs);
@@ -592,9 +692,47 @@ a { color: var(--primary); }
   color: var(--text-faint);
 }
 
-/* The active marker is a rail on the leading edge that grows into place, not a
-   block that blinks on. `scaleY` animates on the compositor, so this stays
-   smooth even while the incoming screen is still rendering. */
+/* The active row's surface is a single pill that TRAVELS between rows, not a
+   background that blinks on in one place and off in another. It is one element
+   measured against whichever link `highlightNav()` marked, so however many rows
+   the role can see there is only ever one thing moving, and it moves on the
+   compositor — smooth even while the incoming screen is still rendering.
+   (`--ease-out` and `--dur-slow` rather than a curve of its own: the motion
+   scale at the top of this file is two curves for the whole application.) */
+.nav-pill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  pointer-events: none;
+  opacity: 0;
+}
+/* Placed once before it is allowed to move, or it flies down from the top of
+   the rail on every sign-in. `buildNav()` adds `.ready` on the next frame. */
+.nav-pill.ready {
+  transition: transform var(--dur-slow) var(--ease-out),
+              width var(--dur-slow) var(--ease-out),
+              height var(--dur-slow) var(--ease-out),
+              opacity var(--dur) var(--ease);
+}
+.nav-pill.on { opacity: 1; }
+
+/* The leading-edge rail rides ON the pill rather than on the row, so it travels
+   with it. On the row it would have had to blink off one line and on at
+   another while the pill was still sliding between them. */
+.nav-pill::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  margin-top: -9px;
+  border-radius: 0 var(--radius-full) var(--radius-full) 0;
+  background: var(--primary);
+}
+
 .nav a {
   position: relative;
   display: flex;
@@ -605,37 +743,63 @@ a { color: var(--primary); }
   color: var(--text-dim);
   text-decoration: none;
   font-size: var(--fs-md);
+  /* Rows arrive staggered when the nav is built. `--i` is set per row in
+     `buildNav()` and capped there, so a twenty-four-row nav does not take a
+     second to finish arriving. `backwards` holds the first frame during the
+     delay — without it every row paints, then jumps back to start. */
+  animation: slide-in var(--dur) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 22ms);
   transition: background-color var(--dur-fast) var(--ease),
               color var(--dur-fast) var(--ease);
 }
-.nav a::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 3px;
-  height: 18px;
-  border-radius: 0 var(--radius-full) var(--radius-full) 0;
-  background: var(--primary);
-  transform: translateY(-50%) scaleY(0);
-  transform-origin: center;
-  opacity: 0;
-  transition: transform var(--dur) var(--ease-out), opacity var(--dur) var(--ease);
-}
 .nav a:hover { background: var(--surface-2); color: var(--text); }
 .nav a.active {
-  background: var(--primary-soft);
+  /* No background of its own — the pill supplies it. */
   color: var(--primary);
   font-weight: var(--fw-semi);
 }
-.nav a.active::before { transform: translateY(-50%) scaleY(1); opacity: 1; }
+.nav a.active:hover { background: none; }
+
+/* Drawn, not typed. See the `--nav-*` block at the top of this file for why.
+   A fixed 20px cell rather than a shrink-to-fit glyph, so every label in the
+   rail starts on the same vertical line. */
+/* The cell itself draws nothing. It is a 20px box holding two mask layers,
+   which is what lets each layer carry its own alpha — `opacity` on the cell
+   would multiply into both of them and the cross-fade below could not work. */
 .nav a .ico {
-  width: 16px;
-  text-align: center;
-  opacity: .85;
+  position: relative;
+  width: 20px;
+  height: 20px;
+  flex: none;
   transition: transform var(--dur) var(--ease-out);
 }
-.nav a:hover .ico { transform: translateX(1px); }
+.nav a .ico::before,
+.nav a .ico::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  transition: opacity var(--dur) var(--ease);
+}
+.nav a .ico::before {
+  opacity: .8;
+  -webkit-mask: var(--nav-icon) center / 18px 18px no-repeat;
+  mask: var(--nav-icon) center / 18px 18px no-repeat;
+}
+/* The heavier weight of the same mark, cross-faded in when the row is active.
+   Two mask images cannot be tweened, so the transition between them is an
+   opacity one — NTC-TMS-Tauri's `wght 350 → wght 500`, animated. */
+.nav a .ico::after {
+  opacity: 0;
+  -webkit-mask: var(--nav-icon-on) center / 18px 18px no-repeat;
+  mask: var(--nav-icon-on) center / 18px 18px no-repeat;
+}
+.nav a:hover .ico { transform: scale(1.09); }
+.nav a:hover .ico::before { opacity: 1; }
+/* The outline does not fade all the way out. At 0 the mark thins for a frame
+   in the middle of the cross-fade, before the heavy one has fully arrived. */
+.nav a.active .ico::before { opacity: .3; }
+.nav a.active .ico::after { opacity: 1; }
 
 .sidebar-foot {
   padding: var(--sp-3) var(--sp-4);
@@ -678,12 +842,19 @@ a { color: var(--primary); }
   border-radius: var(--radius-sm);
   background: none;
   color: var(--text-dim);
-  font-size: 18px;
   cursor: pointer;
   transition: background-color var(--dur-fast) var(--ease),
               color var(--dur-fast) var(--ease);
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn .ico {
+  display: block;
+  width: 20px;
+  height: 20px;
+  background: currentColor;
+  -webkit-mask: var(--icon-menu) center / contain no-repeat;
+  mask: var(--icon-menu) center / contain no-repeat;
+}
 
 /* ------------------------------------------------------- search ("omni") -- */
 
@@ -872,12 +1043,17 @@ a { color: var(--primary); }
               color var(--dur-fast) var(--ease);
 }
 .account-item .ico {
-  width: 16px;
+  width: 17px;
+  height: 17px;
   flex: none;
-  text-align: center;
+  background: currentColor;
   color: var(--text-faint);
-  transition: color var(--dur-fast) var(--ease);
+  -webkit-mask: var(--nav-icon) center / contain no-repeat;
+  mask: var(--nav-icon) center / contain no-repeat;
+  transition: color var(--dur-fast) var(--ease),
+              transform var(--dur) var(--ease-out);
 }
+.account-item:hover .ico { transform: scale(1.09); }
 .account-item:hover { background: var(--surface-2); }
 .account-item:hover .ico { color: var(--primary); }
 .account-sep {
@@ -2613,5 +2789,12 @@ input[type="date"] { min-height: 34px; }
     transform: none;
   }
   .home-row:hover { padding-left: var(--sp-4); }
-  .nav a:hover .ico, .home-more:hover span { transform: none; }
+  .nav a:hover .ico, .account-item:hover .ico, .home-more:hover span {
+    transform: none;
+  }
+  /* The pill still moves — it has to be under the active row — but it goes
+     there in one step rather than travelling the length of the rail. The
+     nav's arrival stagger is dropped entirely: twenty-four delays of 1ms is
+     still twenty-four things starting at different times. */
+  .nav a { animation-delay: 0ms !important; }
 }

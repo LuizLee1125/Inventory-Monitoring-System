@@ -35,41 +35,45 @@ export const can = (permission) => Boolean(session.user?.permissions?.includes(p
 // taxonomy the office already knows. Master files sat inside Transactions
 // there too — Stock File, Customer File and Supplier File were items A, B
 // and C — so they stay grouped that way rather than being split out.
+// `icon` names a drawn mark — `--nav-<name>` and `--nav-<name>-on` in app.css,
+// which is where the drawings and the reasoning live. It used to be a Unicode
+// character per row, and half of them had no glyph in the interface font.
+// Every name here is distinct; four of the characters were not.
 const NAV = [
   { group: '', items: [
-    { path: '/', label: 'Home', icon: '⌂', permission: 'report:read' },
+    { path: '/', label: 'Home', icon: 'home', permission: 'report:read' },
   ] },
   { group: 'Transactions', items: [
-    { path: '/stock', label: 'Stock File', icon: '▣', permission: 'stock:read' },
-    { path: '/customers', label: 'Customer File', icon: '☺', permission: 'customer:read' },
-    { path: '/suppliers', label: 'Supplier File', icon: '⌂', permission: 'supplier:read' },
-    { path: '/invoices', label: 'Invoices', icon: '▦', permission: 'invoice:read' },
+    { path: '/stock', label: 'Stock File', icon: 'box', permission: 'stock:read' },
+    { path: '/customers', label: 'Customer File', icon: 'users', permission: 'customer:read' },
+    { path: '/suppliers', label: 'Supplier File', icon: 'truck', permission: 'supplier:read' },
+    { path: '/invoices', label: 'Invoices', icon: 'invoice', permission: 'invoice:read' },
     // The sales account reaches invoices to print them, not to browse them, so
     // its sidebar names the errand. Other roles get there from the invoice.
-    { path: '/invoices/print', label: 'Print Invoice', icon: '⎙',
+    { path: '/invoices/print', label: 'Print Invoice', icon: 'printer',
       permission: 'invoice:read', roles: ['sales'] },
-    { path: '/purchases', label: 'Purchases', icon: '⇩', permission: 'purchase:read' },
-    { path: '/returns', label: 'Sales Returns', icon: '↩', permission: 'return:read' },
-    { path: '/collections', label: 'Collections', icon: '₱', permission: 'collection:read' },
-    { path: '/archive', label: 'Archived Records', icon: '⛃', permission: 'report:read' },
+    { path: '/purchases', label: 'Purchases', icon: 'inbound', permission: 'purchase:read' },
+    { path: '/returns', label: 'Sales Returns', icon: 'return', permission: 'return:read' },
+    { path: '/collections', label: 'Collections', icon: 'cash', permission: 'collection:read' },
+    { path: '/archive', label: 'Archived Records', icon: 'archive', permission: 'report:read' },
   ] },
   { group: 'Reports', items: [
-    { path: '/reports/price-inquiry', label: 'Price Inquiry', icon: '₱', permission: 'report:read' },
-    { path: '/reports/inventory', label: 'Inventory', icon: '≡', permission: 'report:read' },
-    { path: '/reports/sales', label: 'Sales Summary', icon: '↗', permission: 'report:read' },
-    { path: '/reports/purchases', label: 'Purchase Summary', icon: '⇩', permission: 'report:read' },
-    { path: '/reports/purchased-items', label: 'Purchased Items', icon: '⌸', permission: 'report:read' },
-    { path: '/reports/stock-purchases', label: 'View Purchases', icon: '⇲', permission: 'report:read' },
-    { path: '/reports/aging', label: 'Accounts Receivable', icon: '⏱', permission: 'report:read' },
-    { path: '/reports/expiring', label: 'Expiration Inquiry', icon: '⚑', permission: 'report:read' },
-    { path: '/overview', label: 'Overview', icon: '▤', permission: 'report:read' },
+    { path: '/reports/price-inquiry', label: 'Price Inquiry', icon: 'tag', permission: 'report:read' },
+    { path: '/reports/inventory', label: 'Inventory', icon: 'clipboard', permission: 'report:read' },
+    { path: '/reports/sales', label: 'Sales Summary', icon: 'trend-up', permission: 'report:read' },
+    { path: '/reports/purchases', label: 'Purchase Summary', icon: 'trend-down', permission: 'report:read' },
+    { path: '/reports/purchased-items', label: 'Purchased Items', icon: 'checklist', permission: 'report:read' },
+    { path: '/reports/stock-purchases', label: 'View Purchases', icon: 'lookup', permission: 'report:read' },
+    { path: '/reports/aging', label: 'Accounts Receivable', icon: 'clock', permission: 'report:read' },
+    { path: '/reports/expiring', label: 'Expiration Inquiry', icon: 'hourglass', permission: 'report:read' },
+    { path: '/overview', label: 'Overview', icon: 'grid', permission: 'report:read' },
   ] },
   { group: 'Maintenance', items: [
-    { path: '/maintenance', label: 'Backup & Database', icon: '⛁', permission: 'maintenance:run' },
-    { path: '/maintenance/purge', label: 'Purging of Records', icon: '⌫', permission: 'maintenance:run' },
-    { path: '/archive/summary', label: 'Archive Inquiry', icon: '⛃', permission: 'report:read' },
-    { path: '/reports/depleted', label: 'Depleted Stocks', icon: '↓', permission: 'report:read' },
-    { path: '/admin', label: 'Users & Audit', icon: '⚙', permission: 'admin:users' },
+    { path: '/maintenance', label: 'Backup & Database', icon: 'database', permission: 'maintenance:run' },
+    { path: '/maintenance/purge', label: 'Purging of Records', icon: 'trash', permission: 'maintenance:run' },
+    { path: '/archive/summary', label: 'Archive Inquiry', icon: 'archive-find', permission: 'report:read' },
+    { path: '/reports/depleted', label: 'Depleted Stocks', icon: 'box-down', permission: 'report:read' },
+    { path: '/admin', label: 'Users & Audit', icon: 'shield', permission: 'admin:users' },
   ] },
 ];
 
@@ -102,9 +106,18 @@ function allowed(path) {
     : target === screen || target.startsWith(`${screen}/`)));
 }
 
+// The arrival stagger stops being a stagger and starts being a wait somewhere
+// around here; a role that sees every screen has twenty-four rows.
+const NAV_STAGGER_CAP = 12;
+
 function buildNav() {
   const nav = $('#nav');
   clear(nav);
+
+  // First in the DOM so the links paint over it.
+  nav.append(el('span', { class: 'nav-pill', id: 'nav-pill', 'aria-hidden': true }));
+
+  let index = 0;
   for (const section of NAV) {
     const items = section.items.filter((item) => can(item.permission)
       && allowed(item.path)
@@ -112,11 +125,38 @@ function buildNav() {
     if (!items.length) continue;
     if (section.group) nav.append(el('div', { class: 'nav-group', text: section.group }));
     for (const item of items) {
-      nav.append(el('a', { href: `#${item.path}`, dataset: { path: item.path } }, [
-        el('span', { class: 'ico', text: item.icon }),
+      nav.append(el('a', {
+        href: `#${item.path}`,
+        dataset: { path: item.path },
+        style: `--i:${Math.min(index += 1, NAV_STAGGER_CAP)};`
+          + `--nav-icon:var(--nav-${item.icon});--nav-icon-on:var(--nav-${item.icon}-on)`,
+      }, [
+        el('span', { class: 'ico', 'aria-hidden': true }),
         item.label,
       ]));
     }
+  }
+}
+
+// The pill is one element sliding between rows rather than a background on each
+// of them, so it is placed here — after the active row is known — instead of in
+// CSS. `.nav` is `position: relative`, which makes it the offset parent: the
+// link's own `offsetTop` is already the number wanted, and it scrolls with the
+// content the way a `getBoundingClientRect` reading would not.
+function placeNavPill(active) {
+  const pill = $('#nav-pill');
+  if (!pill) return;
+  if (!active) { pill.classList.remove('on'); return; }
+
+  pill.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
+  pill.style.width = `${active.offsetWidth}px`;
+  pill.style.height = `${active.offsetHeight}px`;
+  pill.classList.add('on');
+
+  // Animated only from the second placement onwards, or it flies down the rail
+  // from the top on every sign-in. One frame is enough for the first to land.
+  if (!pill.classList.contains('ready')) {
+    requestAnimationFrame(() => pill.classList.add('ready'));
   }
 }
 
@@ -135,8 +175,15 @@ function highlightNav() {
     (!longest || link.dataset.path.length > longest.dataset.path.length ? link : longest), null);
 
   for (const link of links) link.classList.toggle('active', link === best);
+  placeNavPill(best);
   $('#sidebar').classList.remove('open');
 }
+
+// The rail is a fixed width, but it becomes a full-height drawer below 900px
+// and the rows change height with the font. Nothing else re-measures it.
+window.addEventListener('resize', () => {
+  placeNavPill($('#nav')?.querySelector('a.active'));
+});
 
 export function setTitle(text) {
   $('#page-title').textContent = text;

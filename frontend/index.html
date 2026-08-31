@@ -108,7 +108,9 @@
 
   <div class="main">
     <header class="topbar">
-      <button class="icon-btn" id="menu-toggle" title="Menu" aria-label="Menu">☰</button>
+      <button class="icon-btn" id="menu-toggle" title="Menu" aria-label="Menu">
+        <span class="ico" aria-hidden="true"></span>
+      </button>
       <h2 id="page-title">Home</h2>
 
       <div class="omni" id="omni">
@@ -137,12 +139,14 @@
           <!-- Changing your password lives on the settings screen, with the rest
                of the account. It was here as well, which meant two ways in and
                two things to keep in step. -->
-          <a class="account-item" id="btn-settings" href="#/settings">
-            <span class="ico">⚙</span>Settings
+          <a class="account-item" id="btn-settings" href="#/settings"
+             style="--nav-icon:var(--icon-gear)">
+            <span class="ico" aria-hidden="true"></span>Settings
           </a>
           <div class="account-sep"></div>
-          <button class="account-item danger" id="btn-logout">
-            <span class="ico">⏻</span>Sign out
+          <button class="account-item danger" id="btn-logout"
+                  style="--nav-icon:var(--icon-power)">
+            <span class="ico" aria-hidden="true"></span>Sign out
           </button>
         </div>
       </div>

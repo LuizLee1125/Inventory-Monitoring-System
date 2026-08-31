@@ -210,6 +210,74 @@ documented where they live: `.print-doc` and the `.doc-*` rules, which are
 measured against a sheet of paper and the boxes on a pre-printed form rather
 than against the screen, and icon glyph sizes, which are not text.
 
+## The sidebar icons
+
+Every mark in the rail was a Unicode character until v0.4 — `⌂ ▣ ☺ ⎙ ⇩ ↩ ₱ ⛃ ⌸
+⛁ ⌫ ⚑`. That fails the same way `⌕` and `▲`/`▼` had already been shown to fail
+elsewhere in this file, only worse, because there were twenty-four of them:
+
+- **Half have no glyph in Inter or Segoe UI.** `⛃`, `⛁`, `⌸`, `⌫` and `⎙` fell
+  through to Segoe UI Symbol or to a notdef box, and a couple resolved to emoji
+  at a different colour and size entirely. The icon column was not a column.
+- **Four were used twice.** `⌂` was Home *and* Supplier File, `₱` Collections
+  *and* Price Inquiry, `⛃` both archive screens, `⇩` both purchase screens. A
+  mark that identifies two rows identifies neither.
+
+They are now drawn, in `app.css`, as `--nav-<name>` / `--nav-<name>-on` pairs
+used as masks over `currentColor` — the same technique as `--icon-user` and the
+chart's `--icon-arrow-up`, on the same 20×20 grid at the same `1.7` stroke with
+the same round caps. `NAV` in `app.js` carries the **name**, never the drawing.
+
+Four rules for adding one:
+
+- **Both halves or neither.** `-on` is the active weight and it is *the same
+  path data at `2.5`*. Nothing else differs, so the pair cannot drift apart.
+  `buildNav()` writes both into the row as `--nav-icon` and `--nav-icon-on`; a
+  missing `-on` leaves the active row's icon blank, not merely unbolded.
+- **Nothing closer together than about 4 units.** At `2.5` a stroke is 2.5 units
+  wide on a 20-unit grid, so detail that reads fine on the outline closes into a
+  block on the active weight. Two icons were drawn twice for this: `checklist`
+  lost a row, and `lookup` lost the lines inside its lens.
+- **The cell draws nothing.** `.nav a .ico` is a 20px box holding two mask
+  layers as `::before` and `::after`, because the cross-fade needs a separate
+  alpha per layer — `opacity` on the cell would multiply into both and the
+  active state would fade the mark it was trying to bring in.
+- **The outline does not fade to 0**, it fades to `.3`. At 0 there is a frame
+  mid-transition where the light mark has gone and the heavy one has not
+  arrived, and the icon visibly thins.
+
+This is NTC-TMS-Tauri's `FILL 0, wght 350 → FILL 1, wght 500`, which is where
+the idea comes from. Two mask images cannot be tweened, so what is animated is
+an opacity cross-fade between them — the variable font's version of this
+transition is instant, and this one is not.
+
+### The active row is a pill that travels
+
+`.nav-pill` is one absolutely-positioned element in `.nav`, moved by
+`placeNavPill()` to whichever link `highlightNav()` just marked. It replaced
+`background: var(--primary-soft)` on `.nav a.active`, and the two must not both
+exist or two things light up.
+
+- **`.nav` is `position: relative`, so the link's own `offsetTop` is the
+  answer.** It is measured against the padding box and it scrolls with the
+  content, which a `getBoundingClientRect()` reading would not without adding
+  `scrollTop` back in.
+- **The leading-edge rail rides on the pill, not on the row.** It is
+  `.nav-pill::after`. On the row it would have had to blink off one line and on
+  at another while the pill was still sliding between the two.
+- **The first placement is not animated.** `.nav-pill` only transitions once it
+  has `.ready`, which is added a frame later; without that the pill flies down
+  from the top of the rail on every sign-in.
+- **A resize re-measures it.** Nothing else does, and the rail becomes a
+  full-height drawer below 900px.
+
+The rows themselves arrive staggered — `slide-in`, delayed by `--i` from
+`buildNav()`. `--i` is capped at `NAV_STAGGER_CAP`, because a role that sees
+every screen has twenty-four rows and an uncapped 22ms step is half a second of
+sidebar assembling itself on every sign-in. `backwards` on the animation holds
+the first frame through the delay; without it every row paints and then jumps
+back to the start of its own animation.
+
 ## Motion
 
 Three durations and two curves (`--dur-fast` 110ms, `--dur` 170ms, `--dur-slow`
