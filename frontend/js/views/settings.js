@@ -207,6 +207,8 @@ function systemGroup() {
 
 /* ---------------------------------------------------------------------- */
 
+export const skeleton = 'form';
+
 export async function render(container) {
   setTitle('Settings');
 

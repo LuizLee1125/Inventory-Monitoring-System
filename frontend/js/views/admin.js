@@ -33,6 +33,8 @@ function rolePowers(role) {
   ]);
 }
 
+export const skeleton = 'stats';
+
 export async function render(container) {
   setTitle('Users and audit');
 

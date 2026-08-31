@@ -70,6 +70,63 @@ export function statusTag(status) {
   return el('span', { class: `tag ${key || 'neutral'}`, text: status || '-' });
 }
 
+/* ------------------------------------------------------------ skeletons -- */
+/* Placeholders shaped like the thing being fetched, so the page does not sit
+   empty and does not jump when the data lands. Widths vary per bar because a
+   column of identical grey rectangles reads as a broken image, not as text. */
+
+const bar = (width) => el('span', { class: 'sk', style: `width:${width}` });
+
+/** Uneven but stable: the same row index always gets the same widths. */
+function rowWidths(columns, seed) {
+  const steps = ['70%', '45%', '85%', '55%', '38%', '62%', '30%'];
+  return Array.from({ length: columns },
+    (_, i) => steps[(i + seed * 3) % steps.length]);
+}
+
+export function skeletonTable(columns = 5, rows = 8) {
+  const head = el('div', { class: 'sk-row head' },
+    Array.from({ length: columns }, () => bar('60%')));
+  const body = Array.from({ length: rows }, (_, r) =>
+    el('div', { class: 'sk-row' },
+      rowWidths(columns, r).map((width) => bar(width))));
+  return el('div', { class: 'sk-table' }, [head, ...body]);
+}
+
+export function skeletonStats(cards = 4) {
+  return el('div', { class: 'stat-grid' },
+    Array.from({ length: cards }, () =>
+      el('div', { class: 'sk-stat' }, [bar('60%'), bar('85%')])));
+}
+
+export function skeletonCard(lines = 3) {
+  return el('div', { class: 'sk-card' },
+    Array.from({ length: lines }, (_, i) => bar(`${90 - i * 18}%`)));
+}
+
+/**
+ * The whole-page placeholder, shown by the router while a screen's first fetch
+ * is in flight. `shape` picks the arrangement; a view names its own by
+ * exporting `skeleton`.
+ */
+export function pageSkeleton(shape = 'list') {
+  const page = el('div', { class: 'sk-page' });
+  if (shape === 'stats') {
+    page.append(skeletonStats(4), skeletonCard(2), skeletonTable(4, 6));
+  } else if (shape === 'detail') {
+    page.append(skeletonCard(1), skeletonStats(3), skeletonTable(5, 6));
+  } else if (shape === 'form') {
+    page.append(skeletonCard(5), skeletonCard(4));
+  } else {
+    page.append(
+      el('div', { class: 'sk-toolbar' },
+        [bar('220px'), bar('150px'), bar('150px')]),
+      skeletonTable(6, 9),
+    );
+  }
+  return page;
+}
+
 /* --------------------------------------------------------------- toasts -- */
 
 export function toast(message, kind = 'info', title = '') {

@@ -3,12 +3,14 @@
 import { api } from '../api.js';
 import {
   attachLookup, card, clear, confirmDialog, count, dataTable, date, debounce, el,
-  field, input, money, pager, promptDialog, reportError, select, statusTag, toast,
-  today, toolbar,
+  field, input, money, pager, promptDialog, reportError, select, skeletonTable,
+  statusTag, toast, today, toolbar,
 } from '../ui.js';
 import { can, page, setTitle } from '../app.js';
 
 const state = { q: '', method: '', date_from: '', date_to: '', page: 1 };
+
+export const skeleton = (params) => (params.id ? 'detail' : 'list');
 
 export async function render(container, params = {}) {
   const hash = window.location.hash.slice(1);
@@ -53,7 +55,7 @@ async function list(container) {
 
   async function refresh() {
     clear(host);
-    host.append(el('div', { class: 'empty', text: 'Loading…' }));
+    host.append(skeletonTable(8, 10));
     try {
       const result = await api.get('/collections', {
         q: state.q, method: state.method, date_from: state.date_from,

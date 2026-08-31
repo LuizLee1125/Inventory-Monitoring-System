@@ -1,7 +1,9 @@
 // Bootstrap: session, shell, navigation, routing.
 
 import { api, onUnauthorized } from './api.js';
-import { $, clear, el, field, input, modal, reportError, toast } from './ui.js';
+import {
+  $, clear, el, field, input, modal, pageSkeleton, reportError, toast,
+} from './ui.js';
 import { currentPath, resolve, route, setNotFound, start } from './router.js';
 import { setupSearch } from './omni.js';
 import { initTheme } from './theme.js';
@@ -163,7 +165,31 @@ function mount(view, params) {
   // after their fetch resolves.
   container.classList.add('entering');
 
-  Promise.resolve(view.render(container, params)).catch(reportError);
+  // Every screen fetches before it can draw, and until it does the page is
+  // empty. Rather than each view remembering to say so, the placeholder goes in
+  // here and leaves the moment the view appends anything of its own — which is
+  // its toolbar for a list screen, or the finished page for one that awaits
+  // first. A view names the shape it wants by exporting `skeleton`.
+  // A module serves both its list and its detail screens, which are different
+  // shapes, so `skeleton` may be a function of the route parameters.
+  const shape = typeof view.skeleton === 'function'
+    ? view.skeleton(params) : view.skeleton;
+  const placeholder = pageSkeleton(shape);
+  container.append(placeholder);
+
+  const watcher = new MutationObserver(() => {
+    if ([...container.children].some((child) => child !== placeholder)) {
+      placeholder.remove();
+      watcher.disconnect();
+    }
+  });
+  watcher.observe(container, { childList: true });
+
+  Promise.resolve(view.render(container, params))
+    .catch(reportError)
+    // Also the safety net: a screen that renders nothing at all, or throws,
+    // must not be left showing a placeholder for something that is not coming.
+    .finally(() => { watcher.disconnect(); placeholder.remove(); });
 }
 
 function guard(permission, view) {

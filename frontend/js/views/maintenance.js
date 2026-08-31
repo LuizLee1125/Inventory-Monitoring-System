@@ -6,6 +6,10 @@ import {
 } from '../ui.js';
 import { page, setTitle } from '../app.js';
 
+// Four figures across the top, then cards — the router draws that shape while
+// the status call is in flight.
+export const skeleton = 'stats';
+
 export async function render(container) {
   setTitle('Backup & database');
   const status = await api.get('/maintenance/status');

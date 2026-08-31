@@ -51,6 +51,8 @@ function trendChart(rows) {
   return svg;
 }
 
+export const skeleton = 'stats';
+
 export async function render(container) {
   setTitle('Dashboard');
   const data = await api.get('/reports/dashboard');

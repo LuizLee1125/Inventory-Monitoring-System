@@ -12,6 +12,8 @@ import {
 } from '../ui.js';
 import { page, setTitle } from '../app.js';
 
+export const skeleton = 'form';
+
 export async function render(container) {
   setTitle('Purging of records');
 

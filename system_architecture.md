@@ -272,6 +272,43 @@ account. That is a choice, not an oversight — it is a property of the screen
 someone is sitting at, and the same clerk on the warehouse terminal and the
 office PC will want different answers.
 
+## Loading placeholders
+
+Every screen fetches before it can draw. There are two moments to cover and they
+are covered differently.
+
+**The page-level placeholder is the router's job, not the view's.** `mount()` in
+`app.js` appends `pageSkeleton()` and removes it again the instant the view
+appends anything of its own — a `MutationObserver` on the container watches for
+a child that is not the placeholder. That means a view needs no code at all to
+get one, including views added later, and there is no way to forget.
+
+Two details keep it honest:
+
+- **The render promise's `finally` is the safety net.** A view that throws, or
+  that legitimately renders nothing, would otherwise leave a placeholder up for
+  something that is never coming.
+- **`skeleton` may be a function of the route parameters.** One module serves
+  both `/stock` and `/stock/:code`, which are different shapes, so `stock.js`
+  exports `(params) => params.code ? 'detail' : 'list'`. A plain string is fine
+  for a module with one screen.
+
+Shapes are `list` (toolbar + table), `stats` (figures, then cards), `detail` and
+`form`. They exist to stop the layout jumping when the data lands, so the right
+shape matters more than the right number of rows.
+
+**The in-list placeholder is separate.** A list screen renders its toolbar
+immediately and refetches into a card below it on every filter, search and page
+change — so the page-level placeholder is long gone by the second fetch.
+`skeletonTable(columns, rows)` fills that card. It replaced
+`<div class="empty">Loading…</div>`, which collapsed the card to one line of
+text and made the whole page jump twice per keystroke.
+
+Bar widths vary per row and are **stable for a given row index** — a column of
+identical grey rectangles reads as a broken image rather than as text. Under
+`prefers-reduced-motion` the sweep is dropped and the flat tint remains, which
+still says "a table is coming".
+
 ## Backups
 
 Retention is by **age with a floor**, not by count. It used to keep the newest

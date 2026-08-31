@@ -3,11 +3,13 @@
 import { api } from '../api.js';
 import {
   card, clear, count, dataTable, date, debounce, el, field, input, modal, money,
-  pager, readForm, reportError, select, statusTag, toast, toolbar,
+  pager, readForm, reportError, select, skeletonTable, statusTag, toast, toolbar,
 } from '../ui.js';
 import { can, page, setTitle } from '../app.js';
 
 const state = { q: '', flag: '', sort: 'name', direction: 'asc', page: 1 };
+
+export const skeleton = (params) => (params.code ? 'detail' : 'list');
 
 export async function render(container, params = {}) {
   if (params.code) return detail(container, params.code);
@@ -44,7 +46,7 @@ async function list(container) {
 
   async function refresh() {
     clear(host);
-    host.append(el('div', { class: 'empty', text: 'Loading…' }));
+    host.append(skeletonTable(7, 10));
     try {
       const result = await api.get('/customers', {
         q: state.q, flag: state.flag, sort: state.sort,

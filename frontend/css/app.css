@@ -114,6 +114,9 @@
 
   --scroll-thumb: rgb(15 23 42 / .16);
   --scroll-thumb-hover: rgb(15 23 42 / .32);
+
+  /* The highlight that sweeps across a loading placeholder. */
+  --sk-sheen: rgb(255 255 255 / .75);
 }
 
 /* Dark follows the system by default; [data-theme] wins when something sets it,
@@ -158,6 +161,7 @@
 
     --scroll-thumb: rgb(229 229 229 / .18);
     --scroll-thumb-hover: rgb(229 229 229 / .34);
+    --sk-sheen: rgb(255 255 255 / .06);
   }
 }
 
@@ -187,6 +191,7 @@
   --shadow-lg: 0 4px 16px -2px rgb(0 0 0 / .6), 0 0 0 1px rgb(255 255 255 / .06);
   --shadow-pop: 0 14px 36px -10px rgb(0 0 0 / .75), 0 0 0 1px rgb(255 255 255 / .07);
   --ring: 0 0 0 3px rgb(96 165 250 / .34);
+  --sk-sheen: rgb(255 255 255 / .06);
   --field-bg: #1c1c1c;
   --field-border: #343434;
   --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
@@ -2058,6 +2063,81 @@ input[type="date"] { min-height: 34px; }
   }
   .page:has(.print-doc) > :not(.print-doc) { display: none !important; }
   .print-doc.cancelled::after { color: rgb(220 38 38 / .22); }
+}
+
+/* ------------------------------------------------------------ skeletons -- */
+/* A page under load draws the shape of what is coming rather than the word
+   "Loading". On a LAN this is often over before it is seen; on the day the
+   server is busy it is the difference between "it is working" and "it is
+   broken", and the layout does not jump when the data lands because the
+   skeleton already occupies the space the data will. */
+
+.sk {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  background-image: linear-gradient(
+    90deg, transparent 0%, var(--sk-sheen) 50%, transparent 100%);
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: sk-sweep 1.4s var(--ease) infinite;
+}
+.sk + .sk { margin-top: var(--sp-2); }
+
+/* The sweep is staggered down the page so it reads as one light passing over
+   the whole thing, not as every row pulsing in lockstep. */
+.sk-page > *:nth-child(2) .sk { animation-delay: .08s; }
+.sk-page > *:nth-child(3) .sk { animation-delay: .16s; }
+
+@keyframes sk-sweep {
+  from { background-position: 140% 0; }
+  to { background-position: -40% 0; }
+}
+
+.sk-page { animation: fade-in var(--dur) var(--ease); }
+
+.sk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+  margin-bottom: var(--sp-4);
+}
+.sk-toolbar .sk { height: 34px; margin: 0; border-radius: var(--radius-field); }
+
+.sk-table { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.sk-row:last-child { border-bottom: 0; }
+.sk-row.head { background: var(--surface-2); }
+.sk-row.head .sk { height: 8px; opacity: .7; }
+.sk-row .sk { height: 11px; margin: 0; }
+
+.sk-card {
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: var(--sp-4);
+}
+.sk-card .sk { height: 12px; }
+
+.sk-stat {
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.sk-stat .sk:first-child { height: 24px; width: 60%; }
+.sk-stat .sk:last-child { height: 10px; width: 85%; margin-top: var(--sp-3); }
+
+/* No sweep for a user who has asked for less motion — a static tint still
+   says "there will be a table here", which is the whole job. */
+@media (prefers-reduced-motion: reduce) {
+  .sk { animation: none; background-image: none; }
 }
 
 /* ------------------------------------------------------------- settings -- */

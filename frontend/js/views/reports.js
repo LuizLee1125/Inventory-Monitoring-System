@@ -4,7 +4,7 @@
 import { api } from '../api.js';
 import {
   attachLookup, card, clear, count, dataTable, date, debounce, el, money,
-  monthsAgo, qty, select, statusTag, today, toolbar,
+  monthsAgo, qty, select, skeletonTable, statusTag, today, toolbar,
 } from '../ui.js';
 import { session, setTitle } from '../app.js';
 
@@ -75,9 +75,10 @@ export async function render(container, params = {}) {
 
 /* -------------------------------------------------------------- helpers -- */
 
-function loading(host) {
+/** Every report redraws into the same host when its filters change. */
+function loading(host, columns = 5) {
   clear(host);
-  host.append(el('div', { class: 'empty', text: 'Loading…' }));
+  host.append(skeletonTable(columns, 7));
 }
 
 function dateRange(onChange, fromDefault = monthsAgo(12)) {

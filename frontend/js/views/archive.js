@@ -7,7 +7,7 @@
 import { api } from '../api.js';
 import {
   card, clear, count, dataTable, date, debounce, el, money, pager, qty,
-  reportError, select, statusTag, toolbar,
+  reportError, select, skeletonTable, statusTag, toolbar,
 } from '../ui.js';
 import { page, setTitle } from '../app.js';
 
@@ -51,6 +51,8 @@ const COLUMNS = {
 };
 
 const KEY = { invoices: 'inv_no', purchases: 'pur_no', returns: 'sr_no', collections: 'col_no' };
+
+export const skeleton = (params) => (params.number ? 'detail' : 'list');
 
 export async function render(container, params = {}) {
   const hash = window.location.hash.slice(1);
@@ -96,7 +98,7 @@ async function browse(container) {
 
   async function refresh() {
     clear(host);
-    host.append(el('div', { class: 'empty', text: 'Loading…' }));
+    host.append(skeletonTable(7, 10));
     try {
       const result = await api.get(`/archive/${state.kind}`, {
         q: state.q, date_from: state.date_from, date_to: state.date_to,

@@ -94,6 +94,10 @@ const PRIMARY = {
 
 /* --------------------------------------------------------------- render -- */
 
+// Figures across the top, then panels — close enough to the real home screen
+// that nothing moves when the fetch lands.
+export const skeleton = 'stats';
+
 export async function render(container) {
   setTitle('Home');
   detachShortcuts?.();

@@ -8,7 +8,9 @@
 // customer" link to the printer.
 
 import { api } from '../api.js';
-import { clear, date, debounce, el, money, qty, toolbar } from '../ui.js';
+import {
+  clear, date, debounce, el, money, qty, skeletonTable, toolbar,
+} from '../ui.js';
 import { session, setTitle } from '../app.js';
 
 export async function render(container, params = {}) {
@@ -49,7 +51,7 @@ async function finder(container) {
 
   const refresh = async () => {
     clear(host);
-    host.append(el('div', { class: 'empty', text: 'Loading…' }));
+    host.append(skeletonTable(5, 8));
     try {
       const result = await api.get('/invoices', {
         q: search.value.trim(), sort: 'date', direction: 'desc', page_size: 25,

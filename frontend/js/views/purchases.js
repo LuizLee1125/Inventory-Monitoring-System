@@ -3,12 +3,15 @@
 import { api } from '../api.js';
 import {
   attachLookup, card, clear, count, dataTable, date, debounce, el, field, input,
-  modal, money, pager, qty, reportError, select, statusTag, toast, today, toolbar,
+  modal, money, pager, qty, reportError, select, skeletonTable, statusTag, toast,
+  today, toolbar,
 } from '../ui.js';
 import { can, page, setTitle } from '../app.js';
 import { lineEditor } from './lineEditor.js';
 
 const state = { q: '', status: '', date_from: '', date_to: '', page: 1 };
+
+export const skeleton = (params) => (params.id ? 'detail' : 'list');
 
 export async function render(container, params = {}) {
   const hash = window.location.hash.slice(1);
@@ -53,7 +56,7 @@ async function list(container) {
 
   async function refresh() {
     clear(host);
-    host.append(el('div', { class: 'empty', text: 'Loading…' }));
+    host.append(skeletonTable(8, 10));
     try {
       const result = await api.get('/purchases', {
         q: state.q, status: state.status, date_from: state.date_from,

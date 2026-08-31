@@ -3,11 +3,15 @@
 import { api } from '../api.js';
 import {
   card, clear, dataTable, date, debounce, el, field, input, modal, money,
-  pager, qty, reportError, select, readForm, statusTag, toast, toolbar,
+  pager, qty, reportError, select, readForm, skeletonTable, statusTag, toast,
+  toolbar,
 } from '../ui.js';
 import { can, page, setTitle } from '../app.js';
 
 const state = { q: '', division: '', flag: '', sort: 'code', direction: 'asc', page: 1 };
+
+// One module, two screens: a searchable list and one item's detail page.
+export const skeleton = (params) => (params.code ? 'detail' : 'list');
 
 export async function render(container, params = {}) {
   if (params.code) return detail(container, params.code);
@@ -62,7 +66,7 @@ async function list(container) {
 
   async function refresh() {
     clear(host);
-    host.append(el('div', { class: 'empty', text: 'Loading…' }));
+    host.append(skeletonTable(8, 10));
     try {
       const result = await api.get('/stock', {
         q: state.q, division: state.division, flag: state.flag,
