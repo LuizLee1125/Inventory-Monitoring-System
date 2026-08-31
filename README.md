@@ -359,6 +359,24 @@ the Transactions column.
 One item from the original column is gone rather than reimplemented: **Set Printer Mode**, because
 printing is now the browser's own dialog. Its slot carries Change Password instead.
 
+### Settings
+
+Every account has one, whatever its role: click the initials at the top right and choose
+**Settings**. Three sections:
+
+| Section | What is there |
+| --- | --- |
+| Account | User name, full name, role and the DOS menu it replaces, how many permissions the role grants, when the account was opened, when this sign-in began. All read-only — changing somebody's account is Users & Audit, which is where the permission for it lives. |
+| Password | Change your own, without going through the menu. Eight characters or more. You stay signed in on this device. |
+| Appearance | **Light**, **Dark**, or **System**, which follows whatever the PC is set to and keeps following it. |
+
+The appearance choice is remembered in that browser, on that PC — not on the account. The
+warehouse terminal under fluorescent light and the office PC by the window can want different
+answers, and the same clerk uses both.
+
+Nothing here needs a permission, so a sales clerk who sees two menu options still reaches their own
+settings.
+
 ---
 
 ## Roles and permissions
@@ -633,9 +651,11 @@ frontend/               browser application, no build step
     ui.js               DOM helpers, tables, modals, toasts, type-ahead
     omni.js             the top-bar search across stock, customers and invoices
     router.js           hash router
+    theme.js            light / dark / follow-system, stored per browser
     app.js              bootstrap, session, navigation
     views/
       home.js           the role-aware launcher that replaces the DOS main menu
+      settings.js       account details, password, light/dark appearance
       maintenance.js    backup and database housekeeping
       purge.js          purging of records
       archive.js        archived records and archive inquiry

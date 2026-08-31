@@ -12,6 +12,19 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
+<!-- Runs before the first paint, so a dark-mode user never sees a white flash
+     while /js/theme.js is being fetched. Deliberately a copy of that module's
+     apply(): a module cannot run this early. Keep the two in step. -->
+<script>
+  (function () {
+    try {
+      var mode = localStorage.getItem('ims.theme');
+      if (mode === 'light' || mode === 'dark') {
+        document.documentElement.setAttribute('data-theme', mode);
+      }
+    } catch (e) { /* private mode: fall back to following the system */ }
+  })();
+</script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f4e79'/><text x='16' y='23' font-size='18' font-family='system-ui' font-weight='700' fill='white' text-anchor='middle'>M</text></svg>">
 </head>
 <body>
@@ -85,11 +98,22 @@
         </button>
         <div class="account-menu" id="account-menu" hidden>
           <div class="account-head">
-            <strong id="account-name"></strong>
-            <span id="account-role"></span>
+            <span class="account-avatar" id="account-avatar">··</span>
+            <div class="account-who">
+              <strong id="account-name"></strong>
+              <span id="account-role"></span>
+            </div>
           </div>
-          <button class="account-item" id="btn-password">Change password</button>
-          <button class="account-item danger" id="btn-logout">Sign out</button>
+          <a class="account-item" id="btn-settings" href="#/settings">
+            <span class="ico">⚙</span>Settings
+          </a>
+          <button class="account-item" id="btn-password">
+            <span class="ico">⚿</span>Change password
+          </button>
+          <div class="account-sep"></div>
+          <button class="account-item danger" id="btn-logout">
+            <span class="ico">⏻</span>Sign out
+          </button>
         </div>
       </div>
     </header>

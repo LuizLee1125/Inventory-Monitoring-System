@@ -152,6 +152,13 @@ three places have to agree or the UI contradicts itself:
    dropdown entry that lands on "Not allowed".
 3. `ROLE_MENU` in `frontend/js/views/home.js`, if the role has its own menu.
 
+`ACCOUNT_SCREENS` (also `app.js`) is the exception to all of that: screens that
+belong to the person rather than to the business — `/settings` today. They are
+allowed for every signed-in user whatever their role shows them, which is why
+they sit in their own list instead of being repeated in each role's. A screen
+belongs there only if it would be right for *every* role, present and future;
+anything about the business goes through `ROLE_SCREENS`.
+
 ## Role menus on the home screen
 
 `ROLE_MENU` (`frontend/js/views/home.js`) gives a role the DOS menu it used to
@@ -178,6 +185,92 @@ as the cap. Without that, four rows stretch down the whole viewport.
 
 The legacy programs behind the current sales menu are `SIFYL`/`SIFYLP` (A) and
 `STKPURCH` (B).
+
+## The design scale (v0.3)
+
+`app.css` opens with a block of tokens, and **every rule below it uses them**.
+That is the whole discipline, and it is worth stating plainly because the
+stylesheet spent a long time not doing it: it had accumulated nineteen font
+sizes (10.5 … 29px), eight weights (including 550, 650, 660 and 750, which Inter
+does not have and the browser silently rounded), and spacing at 7, 9, 11, 13,
+15, 18, 22 and 26px. Each value was reasonable on the screen it was written for.
+Together they were the reason two screens never quite lined up.
+
+| Tokens | Steps |
+| --- | --- |
+| `--fs-2xs … --fs-3xl` | 11, 12, 13, 14, 16, 20, 26, 32 |
+| `--fw-normal … --fw-bold` | 400, 500, 600, 700 |
+| `--lh-tight / snug / normal` | 1.2, 1.35, 1.5 |
+| `--sp-1 … --sp-10` | 4, 8, 12, 16, 20, 24, 32, 40 |
+| `--radius-sm / --radius / --radius-lg / --radius-full` | 6, 10, 14, 999 |
+
+When something needs a size that is not on the scale, the answer is almost
+always the nearest step, not a new token. The two deliberate exemptions are
+documented where they live: `.print-doc` and the `.doc-*` rules, which are
+measured against a sheet of paper and the boxes on a pre-printed form rather
+than against the screen, and icon glyph sizes, which are not text.
+
+## Motion
+
+Three durations and two curves (`--dur-fast` 110ms, `--dur` 170ms, `--dur-slow`
+240ms; `--ease`, `--ease-out`), and one rule for choosing: **anything that
+responds to a pointer uses `--dur-fast`; anything that appears uses `--dur`.**
+
+There are seven keyframes for the whole application and they share a vocabulary
+on purpose — things that appear next to their trigger scale out of it
+(`pop-in`, with `transform-origin` set at the call site so a dropdown grows from
+the control that opened it), things arriving from elsewhere travel a short
+distance (`slide-in`, `page-in`, `rise-in`, `modal-in`), and only an error
+shakes. A new animation should be one of these before it is an eighth.
+
+Two things that are easy to get wrong here:
+
+- **Theme changes are transitioned, layout never is.** A named list of surfaces
+  cross-fades `background-color`, `border-color` and `color` over `--dur-slow`,
+  so switching theme is a wash rather than a flash. Adding `all` to that
+  transition would animate every layout property with it and make the whole
+  interface wobble.
+- **`prefers-reduced-motion` is one block at the end of the file**, and it sets
+  durations to `1ms` rather than `none` so `animationend` and `transitionend`
+  still fire — nothing waiting on one is left hanging. Hover *displacements*
+  (`translateY`, `translateX`, `padding-left`) are separately set back to their
+  resting value, because an instant jump under the pointer is exactly what that
+  setting is asking to avoid.
+
+The page-enter animation is driven by an `.entering` class that `mount()` adds
+in `app.js`. It is added once and left on: `clear()` has already removed every
+child, so whatever `render()` appends is a new element and animates on
+insertion — including parts that arrive late, after their fetch resolves.
+
+## Theming
+
+The stylesheet carried a complete `:root[data-theme="dark"]` palette for a long
+time and **nothing ever set that attribute**, so the theme followed the OS and
+could not be changed. `frontend/js/theme.js` is the missing half.
+
+Three modes, and `system` is deliberately not "write out the current OS value":
+
+| Mode | What it does |
+| --- | --- |
+| `system` | removes `data-theme` entirely, so the `prefers-color-scheme` block wins and the theme keeps following the OS as it changes |
+| `light` | `data-theme="light"`, which that block explicitly excludes |
+| `dark` | `data-theme="dark"` |
+
+This is why the dark rules are written as
+`:root:not([data-theme="light"])` inside the media query. Any new themed
+property needs a value in all three places — bare `:root`, the media query, and
+`:root[data-theme="dark"]` — or it will be right in two themes and wrong in the
+third.
+
+**There is a duplicated copy of `apply()` inlined in the head of
+`index.html`.** It has to be there: a module cannot run before the first paint,
+and without it a dark-mode user gets a white flash on every load. If the modes
+change, that copy changes with them.
+
+The setting is `localStorage`, so it is per-browser and per-device, not per
+account. That is a choice, not an oversight — it is a property of the screen
+someone is sitting at, and the same clerk on the warehouse terminal and the
+office PC will want different answers.
 
 ## Printing
 

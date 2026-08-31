@@ -65,12 +65,22 @@ def logout(request: Request, response: Response) -> dict:
 
 @router.get("/me")
 def me(user: dict = Depends(current_user)) -> dict:
+    # The settings screen shows when the account was opened and when it was last
+    # used. `resolve_session` deliberately does not carry those: it runs on every
+    # request, and this is the one endpoint that wants them.
+    detail = db.query_one(
+        "SELECT created_at, last_login, legacy_access_code FROM users WHERE id = ?",
+        (user["id"],)) or {}
+
     return {
         "username": user["username"],
         "full_name": user["full_name"],
         "role": user["role"],
         "permissions": user["permissions"],
         "must_change_password": bool(user["must_change_password"]),
+        "created_at": detail.get("created_at"),
+        "last_login": detail.get("last_login"),
+        "legacy_access_code": detail.get("legacy_access_code"),
     }
 
 

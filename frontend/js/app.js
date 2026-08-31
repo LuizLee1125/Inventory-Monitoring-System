@@ -4,6 +4,7 @@ import { api, onUnauthorized } from './api.js';
 import { $, clear, el, field, input, modal, reportError, toast } from './ui.js';
 import { currentPath, resolve, route, setNotFound, start } from './router.js';
 import { setupSearch } from './omni.js';
+import { initTheme } from './theme.js';
 
 import * as home from './views/home.js';
 import * as dashboard from './views/dashboard.js';
@@ -20,6 +21,7 @@ import * as returns from './views/returns.js';
 import * as collections from './views/collections.js';
 import * as reports from './views/reports.js';
 import * as admin from './views/admin.js';
+import * as settings from './views/settings.js';
 
 export const session = { user: null, meta: null };
 
@@ -83,10 +85,16 @@ const ROLE_SCREENS = {
   ],
 };
 
+// Screens that belong to the account rather than to the business. Every signed-in
+// user reaches these whatever their role shows them, which is why they sit
+// outside ROLE_SCREENS instead of being repeated in each role's list.
+const ACCOUNT_SCREENS = ['/settings'];
+
 function allowed(path) {
+  const target = path.split('?')[0];
+  if (ACCOUNT_SCREENS.includes(target)) return true;
   const screens = ROLE_SCREENS[session.user?.role];
   if (!screens) return true;
-  const target = path.split('?')[0];
   return screens.some((screen) => (screen === '/'
     ? target === '/'
     : target === screen || target.startsWith(`${screen}/`)));
@@ -137,13 +145,24 @@ export function page() { return $('#page'); }
 
 /* --------------------------------------------------------------- routes -- */
 
+let leaving = null;
+
 function mount(view, params) {
   const container = page();
+  leaving?.();
+  leaving = view.leave || null;
   clear(container);
   // Only the home screen pins itself to the viewport; every other screen
   // scrolls normally.
   container.classList.remove('home-fit');
   highlightNav();
+
+  // The class stays on for the life of the screen. clear() has just removed
+  // every child, so whatever render() appends is a new element and starts its
+  // enter animation on insertion — including the parts that arrive late,
+  // after their fetch resolves.
+  container.classList.add('entering');
+
   Promise.resolve(view.render(container, params)).catch(reportError);
 }
 
@@ -194,6 +213,11 @@ function registerRoutes() {
   route('/collections/:id', guard('collection:read', collections));
   route('/reports/:name', guard('report:read', reports));
   route('/admin', guard('admin:users', admin));
+  // Settings needs no permission beyond being signed in: it is this person's
+  // own account, and every role has one.
+  route('/settings', (params) => {
+    if (session.user) mount(settings, params);
+  });
 
   setNotFound(() => {
     setTitle('Not found');
@@ -224,6 +248,7 @@ async function showShell() {
 
   const who = session.user.full_name || session.user.username;
   $('#avatar-initials').textContent = initials(who);
+  $('#account-avatar').textContent = initials(who);
   $('#btn-account').title = who;
   $('#account-name').textContent = who;
   $('#account-role').textContent = roleLabel();
@@ -338,6 +363,8 @@ function wireChrome() {
     closeAccountMenu();
     changePassword(false);
   });
+  // An anchor, so the router handles it; the menu just has to get out of the way.
+  $('#btn-settings').addEventListener('click', closeAccountMenu);
   $('#menu-toggle').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
 
   const account = $('#btn-account');
@@ -366,6 +393,9 @@ function wireChrome() {
 let started = false;
 
 async function boot() {
+  // The inline script in index.html has already painted the right theme; this
+  // takes over so the picker and the system-change listener work.
+  initTheme();
   wireChrome();
   registerRoutes();
   // Routing only begins once the session is known, so a guarded screen is
