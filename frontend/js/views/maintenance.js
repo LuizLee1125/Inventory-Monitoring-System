@@ -16,10 +16,18 @@ export async function render(container) {
   const db = status.database;
 
   const lastBackup = status.last_backup;
-  const policy = status.backup_policy;
   const days = lastBackup
     ? Math.floor((Date.now() - new Date(lastBackup.created_at)) / 86400000)
     : null;
+
+  // A workstation can hold this page open for days, so it is routinely a
+  // version ahead of or behind the server it is talking to — and a server that
+  // predates the backup schedule sends no `backup_policy` at all. This is the
+  // screen you open when something is wrong with the system, so a missing field
+  // has to degrade into saying less, never into an error where the page was.
+  const policy = status.backup_policy ?? null;
+  const totalMb = policy?.total_mb
+    ?? status.backups.reduce((sum, row) => sum + row.size_mb, 0);
 
   container.append(
     el('p', { class: 'lede' },
@@ -45,14 +53,19 @@ export async function render(container) {
 
     card('Back up the database', el('div', {}, [
       el('p', { class: 'hint' }, [
-        policy.every_hours
+        policy && policy.every_hours
           ? `Taken automatically every ${policy.every_hours === 24 ? 'day' : `${policy.every_hours} hours`} `
             + 'while the server is running, and whenever you press the button. '
-          : 'Automatic backups are switched off, so the only backups are the ones taken here. ',
+          : policy
+            ? 'Automatic backups are switched off, so the only backups are the ones taken here. '
+            : '',
         'Copies are written into ', el('code', { text: 'database\\backups' }), '. ',
-        `Anything older than ${policy.keep_days} days is removed, `
-        + `except that the ${policy.keep_min} most recent are always kept — `
-        + 'so a week away from the office cannot empty the folder.',
+        policy
+          ? `Anything older than ${policy.keep_days} days is removed, `
+            + `except that the ${policy.keep_min} most recent are always kept — `
+            + 'so a week away from the office cannot empty the folder.'
+          : 'This server has not reported its backup policy, which means it is running an '
+            + 'older version than this page. Restart it to pick up the current settings.',
       ]),
       el('p', { class: 'hint', style: 'margin-top:8px' },
         [el('strong', { text: 'Copy them off this PC as well.' }),
@@ -60,7 +73,7 @@ export async function render(container) {
       el('div', { class: 'toolbar', style: 'margin:14px 0 0' }, [
         el('button', { class: 'btn primary', text: 'Back up now', onClick: runBackup }),
         el('span', { class: 'spacer' }),
-        policy.next_due
+        policy?.next_due
           ? el('span', { class: 'hint', text: `Next automatic backup ${dateTime(policy.next_due)}` })
           : null,
       ]),
@@ -82,14 +95,18 @@ export async function render(container) {
          + 'as the database occupies and takes a few minutes — do it out of hours.']),
     ])),
 
-    card(`Backups (${status.backups.length}, ${count(policy.total_mb)} MB)`, dataTable([
+    card(`Backups (${status.backups.length}, ${count(totalMb)} MB)`, dataTable([
       { key: 'name', label: 'File', class: 'mono' },
       { key: 'created_at', label: 'Taken', render: (r) => dateTime(r.created_at) },
-      { key: 'age_days', label: 'Age',
-        render: (r) => (r.age_days < 1 ? 'today' : `${Math.floor(r.age_days)} d`) },
+      // Both fall back to something the page can work out for itself, so an
+      // older server costs accuracy in the policy text and nothing here.
+      { key: 'age_days', label: 'Age', render: (r) => ageOf(r) },
       { key: 'automatic', label: 'By',
-        render: (r) => el('span', { class: `tag ${r.automatic ? 'neutral' : 'info'}`,
-                                    text: r.automatic ? 'automatic' : 'by hand' }) },
+        render: (r) => {
+          const auto = r.automatic ?? r.name.includes('-auto.');
+          return el('span', { class: `tag ${auto ? 'neutral' : 'info'}`,
+                              text: auto ? 'automatic' : 'by hand' });
+        } },
       { key: 'size_mb', label: 'Size', align: 'right', render: (r) => `${count(r.size_mb)} MB` },
     ], status.backups, {
       emptyText: 'No backups yet. Take one now.',
@@ -103,9 +120,17 @@ export async function render(container) {
   );
 }
 
+function ageOf(row) {
+  const days = row.age_days
+    ?? (Date.now() - new Date(row.created_at)) / 86400000;
+  return days < 1 ? 'today' : `${Math.floor(days)} d`;
+}
+
 function backupTone(days, policy) {
   if (days === null) return 'danger';
-  const stale = policy.every_hours ? 2 : 7;
+  // A schedule that is running makes anything older than a couple of days a
+  // sign the schedule itself has stopped. Without one, a week is the old mark.
+  const stale = policy?.every_hours ? 2 : 7;
   if (days >= stale) return 'danger';
   return days >= 1 ? 'warn' : 'ok';
 }
