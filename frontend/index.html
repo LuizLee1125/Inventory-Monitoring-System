@@ -69,10 +69,10 @@
           <span>Password</span>
           <span class="login-input">
             <span class="ico lock" aria-hidden="true"></span>
-            <input name="password" type="password" autocomplete="current-password"
-                   placeholder="••••••••" required>
+            <input name="password" type="password" autocomplete="current-password" required>
+            <!-- Revealed only once there is something to reveal; see wireLogin(). -->
             <button type="button" class="login-reveal" id="login-reveal"
-                    aria-label="Show password" aria-pressed="false"></button>
+                    aria-label="Show password" aria-pressed="false" hidden></button>
           </span>
         </label>
 

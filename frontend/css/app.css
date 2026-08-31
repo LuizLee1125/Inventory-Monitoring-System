@@ -399,20 +399,33 @@ a { color: var(--primary); }
   font-size: var(--fs-xl);
 }
 
+/* A tinted panel and nothing else. It carried a 3px rule down its leading edge
+   — the shape every framework's alert component ships with — and next to a
+   form of soft-cornered wells it read as pasted in from somewhere else. The
+   badge already says what kind of message this is. */
 .login-error {
   display: flex;
   align-items: flex-start;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
   margin: 0 0 var(--sp-5);
   padding: var(--sp-3) var(--sp-4);
-  border-left: 3px solid var(--danger);
   border-radius: var(--radius);
   background: var(--danger-soft);
   color: var(--danger);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
-  animation: shake var(--dur-slow) var(--ease);
 }
+
+/* Three states, driven from app.js by restarting one of these animations:
+   arriving, being told again, and going away. A class alone would not replay —
+   see showLoginError(). */
+.login-error.arriving { animation: error-in var(--dur-slow) var(--ease-out); }
+.login-error.again { animation: shake var(--dur-slow) var(--ease); }
+/* Slower than anything else in the application, and deliberately so: every
+   other animation answers something the user just did, where a long one is
+   just a wait. This one starts on its own after ten seconds, and at --dur-slow
+   the banner did not fade so much as vanish. */
+.login-error.leaving { animation: error-out 480ms var(--ease) forwards; }
 .login-error::before {
   content: "!";
   display: grid;
@@ -1773,6 +1786,19 @@ input[type="date"] { min-height: 34px; }
   40% { transform: translateX(4px); }
   60% { transform: translateX(-2px); }
   80% { transform: translateX(2px); }
+}
+
+/* The sign-in error arriving and leaving. It grows out of the space above the
+   fields rather than appearing on top of them, so the form below is pushed
+   down by something the eye has already seen start to move. */
+@keyframes error-in {
+  from { opacity: 0; transform: translateY(-8px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes error-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-4px); }
 }
 
 /* ---------------------------------------------------------- line editor -- */

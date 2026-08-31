@@ -291,6 +291,40 @@ system is — and this is the first screen anyone sees.
   viewport width: it is display lettering on a cover with a whole column to
   fill, which is the one place the scale in `app.css` does not apply.
 
+### The rejected-sign-in banner
+
+`showLoginError()` in `app.js` drives three states, and they are three because
+arriving and being told the same thing again are different events:
+
+| State | When | What plays |
+| --- | --- | --- |
+| `arriving` | the banner was hidden | `error-in` — fades and drops into place |
+| `again` | it was already on screen | `shake` — it cannot announce itself by fading in, because it never faded out |
+| `leaving` | ten seconds later | `error-out`, at 480ms |
+
+Three things that are easy to get wrong here:
+
+- **Adding a class does not replay an animation.** The browser coalesces the
+  removal and the addition into one style recalculation and sees no change.
+  Reading `offsetWidth` between them forces the flush that makes it a change.
+- **`animationend` is the signal, a timer is the guarantee.** A backgrounded tab
+  runs no animation frames, so the event may never arrive — and a banner that
+  fails to leave sits there until the page is reloaded. Same fallback as the
+  dropdown's exit animation.
+- **A fresh error can land mid-fade**, and clears `leaving` on its way in. The
+  dismissal handler checks for that class before hiding, or the shake it plays
+  would end on the pending listener and hide a banner just raised again.
+
+`error-out` is the one animation slower than `--dur-slow`. Everything else in
+the application answers something the user just did, where a long duration is
+only a wait; this one starts on its own after ten seconds, and at 240ms the
+banner did not fade so much as vanish.
+
+The banner has **no rule down its leading edge**. It had the 3px one every
+framework's alert component ships with, and next to a form of soft-cornered
+wells it read as pasted in from elsewhere. The badge already says what kind of
+message it is.
+
 Two things on the form side exist for reasons specific to this office:
 
 - **The Caps Lock warning.** Every user name here is upper-case, carried over

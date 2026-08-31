@@ -228,20 +228,76 @@ function registerRoutes() {
 
 /* ------------------------------------------------------------- sign in --- */
 
+// How long a rejected sign-in stays on screen. Long enough to read twice and
+// look back at what was typed; short enough that it is gone before the next
+// person walks up to the terminal.
+const LOGIN_ERROR_MS = 10000;
+let loginErrorTimer = null;
+
+/**
+ * Show — or re-show — the sign-in error.
+ *
+ * Arriving and being told the same thing again are different events and get
+ * different animations: a banner that is already on screen cannot announce
+ * itself by fading in, because it never faded out. It shakes instead.
+ *
+ * Both need the animation *restarted*, which setting a class does not do on
+ * its own: the browser coalesces the removal and the addition into one style
+ * recalculation and sees no change. Reading `offsetWidth` between them forces
+ * the flush that makes it a change.
+ */
+function showLoginError(message) {
+  const error = $('#login-error');
+  clearTimeout(loginErrorTimer);
+
+  if (!message) {
+    error.hidden = true;
+    error.className = 'login-error';
+    return;
+  }
+
+  const returning = !error.hidden;
+  error.textContent = message;
+  error.hidden = false;
+  error.className = 'login-error';
+  void error.offsetWidth;
+  error.classList.add(returning ? 'again' : 'arriving');
+
+  loginErrorTimer = setTimeout(() => {
+    error.classList.add('leaving');
+
+    const finish = () => {
+      // A fresh error can arrive mid-fade, and it clears `leaving` on its way
+      // in. Without this check the shake it plays would end on this listener
+      // and hide a banner that had just been raised again.
+      if (!error.classList.contains('leaving')) return;
+      error.hidden = true;
+      error.className = 'login-error';
+    };
+
+    // The event is the signal; the timer is the guarantee. A tab in the
+    // background does not run animation frames, so `animationend` may never
+    // arrive — and a banner that fails to leave would sit there until the page
+    // was reloaded.
+    error.addEventListener('animationend', finish, { once: true });
+    loginErrorTimer = setTimeout(finish, 700);
+  }, LOGIN_ERROR_MS);
+}
+
 function showLogin(message = '') {
   $('#boot').hidden = true;
   $('#shell').hidden = true;
   $('#login').hidden = false;
-  const error = $('#login-error');
-  error.hidden = !message;
-  error.textContent = message;
+  showLoginError(message);
 
   // A password left revealed must not still be on screen for whoever signs in
   // next, and the caps warning belongs to the attempt that raised it.
   const form = $('#login-form');
   form.password.type = 'password';
-  $('#login-reveal').setAttribute('aria-pressed', 'false');
-  $('#login-reveal').setAttribute('aria-label', 'Show password');
+  const reveal = $('#login-reveal');
+  reveal.setAttribute('aria-pressed', 'false');
+  reveal.setAttribute('aria-label', 'Show password');
+  reveal.hidden = !form.password.value;
   $('#login-caps').hidden = true;
   form.username.focus();
 }
@@ -366,6 +422,17 @@ function wireLogin() {
     reveal.setAttribute('aria-pressed', String(!showing));
     reveal.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
     password.focus();
+  });
+
+  // Nothing typed, nothing to reveal — an eye over an empty box is a control
+  // that does nothing, sitting where the cursor is about to go.
+  password.addEventListener('input', () => {
+    reveal.hidden = !password.value;
+    if (!password.value && password.type === 'text') {
+      password.type = 'password';
+      reveal.setAttribute('aria-pressed', 'false');
+      reveal.setAttribute('aria-label', 'Show password');
+    }
   });
 
   // Every user name here is upper case, carried over from the DOS access file,
