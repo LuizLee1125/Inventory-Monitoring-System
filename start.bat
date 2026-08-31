@@ -51,6 +51,38 @@ if not exist "..\database\ims.sqlite" (
   echo.
 )
 
+REM --- is one already running? -----------------------------------------------
+REM  Without this check a second copy fails to bind the port, prints a stack
+REM  trace and exits - while the first one carries on serving. The screen then
+REM  shows an old version of the system with no sign that anything went wrong,
+REM  and restarting "to pick up a change" quietly does nothing at all.
+set "BUSY="
+for /f "tokens=5" %%P in ('netstat -ano -p TCP ^| findstr /r /c:"LISTENING" ^| findstr /r /c:":%PORT% "') do set "BUSY=%%P"
+
+if defined BUSY (
+  echo.
+  echo  ===========================================================
+  echo   ALREADY RUNNING - nothing was started
+  echo  ===========================================================
+  echo.
+  echo  Something is already serving port %PORT% ^(process %BUSY%^).
+  echo  That is almost certainly this system, started earlier.
+  echo.
+  echo  A second copy cannot use the same port, so this window would
+  echo  have exited and left the OLD one running - which is how a
+  echo  restart appears to do nothing.
+  echo.
+  echo  To restart properly, stop the old one first:
+  echo.
+  echo      close its console window, or run:
+  echo      taskkill /PID %BUSY% /F
+  echo.
+  echo  Then run this file again.
+  echo.
+  pause
+  exit /b 1
+)
+
 set "IMS_PORT=%PORT%"
 set "IMS_HOST=0.0.0.0"
 

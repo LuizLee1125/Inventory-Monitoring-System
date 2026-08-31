@@ -10,11 +10,16 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
+import tempfile
 import time
+import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 
 from .. import config, db
 from ..deps import require
@@ -22,6 +27,15 @@ from ..deps import require
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 
 BACKUP_DIR = config.BACKUP_DIR
+
+# The database inside the zip is always called this, whatever the zip is called,
+# so a person who opens one knows immediately what they are looking at.
+MEMBER_NAME = "ims.sqlite"
+
+# A backup being written carries this until it is complete. The rename at the
+# end is atomic, so a power cut leaves a .part nobody will mistake for a backup
+# rather than a truncated .zip that looks like one.
+PART_SUFFIX = ".part"
 
 
 class BackupSpaceError(RuntimeError):
@@ -33,10 +47,77 @@ def _disk_free_mb(path: Path) -> float:
 
 
 def _backup_files() -> list[Path]:
-    """Newest first. The timestamp is in the name, so the sort is the order."""
+    """Newest first. The timestamp is in the name, so the sort is the order.
+
+    Both formats are listed. New backups are always zips, but an office
+    upgrading to this version has a folder of plain `.sqlite` copies that are
+    perfectly good backups of its real business — hiding them because the format
+    changed would be the worst possible way to introduce a new one.
+    """
     if not BACKUP_DIR.exists():
         return []
-    return sorted(BACKUP_DIR.glob("ims-*.sqlite"), reverse=True)
+    found = [*BACKUP_DIR.glob("ims-*.zip"), *BACKUP_DIR.glob("ims-*.sqlite")]
+    # By the clock, not by the name. The name now leads with a readable date
+    # (8-31-2026), which does not sort - 10-1-2026 would come before 8-31-2026 -
+    # and the modified time is what retention and "last backup" already read, so
+    # ordering by it makes the whole feature agree with itself.
+    return sorted(found, key=lambda p: (p.stat().st_mtime, p.name), reverse=True)
+
+
+@contextmanager
+def open_backup(path: Path) -> Iterator[Path]:
+    """Yield the database inside a backup, whatever the backup is wrapped in.
+
+    A zip is expanded to a temporary file and cleaned up afterwards; a plain
+    `.sqlite` from before the format changed is handed over as it is, and must
+    not be deleted on the way out.
+    """
+    if path.suffix == ".sqlite":
+        yield path
+        return
+
+    work = Path(tempfile.mkdtemp(prefix="ims-backup-"))
+    try:
+        yield extract_backup(path, work)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def tidy_backup_dir() -> dict:
+    """Startup housekeeping: move the old folder in, sweep away half-written files.
+
+    Both halves exist because the server is a PC in an office, not a datacentre.
+    It gets switched off at the wall, and it gets upgraded by copying a new
+    folder over the old one.
+    """
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    moved, swept = [], []
+
+    # A backup interrupted by the power going off. It is not a backup; it is the
+    # first part of one, and leaving it would put a file in the list that cannot
+    # be restored from.
+    for part in BACKUP_DIR.glob(f"*{PART_SUFFIX}"):
+        swept.append(part.name)
+        part.unlink()
+
+    legacy = config.LEGACY_BACKUP_DIR
+    if legacy.exists() and legacy.resolve() != BACKUP_DIR:
+        for old in sorted(legacy.iterdir()):
+            if not old.is_file():
+                continue
+            target = BACKUP_DIR / old.name
+            if target.exists():
+                continue
+            try:
+                # A rename inside one drive moves nothing and needs no space.
+                # Across drives it fails, and the backup stays where it is
+                # rather than being half-copied.
+                old.rename(target)
+                moved.append(old.name)
+            except OSError as exc:
+                print(f"  Backups : could not move {old.name} - {exc}", flush=True)
+
+    return {"moved": moved, "swept": swept}
 
 
 def _backup_rows() -> list[dict]:
@@ -51,25 +132,63 @@ def _backup_rows() -> list[dict]:
             "size_mb": round(stat.st_size / 1_048_576, 1),
             "created_at": taken.isoformat(timespec="seconds"),
             "age_days": round((now - taken).total_seconds() / 86400, 1),
-            # The scheduled ones say so in the filename, so the screen can show
-            # at a glance whether the week filled itself or was filled by hand.
+            # The filename carries the kind, so the screen can say at a glance
+            # whether the week filled itself, was filled by hand, or holds the
+            # database as it was just before somebody restored over it.
             "automatic": path.stem.endswith("-auto"),
+            "kind": ("automatic" if path.stem.endswith("-auto")
+                     else "prerestore" if path.stem.endswith("-prerestore")
+                     else "manual"),
         })
     return rows
 
 
+SETTING_MANUAL_DAYS = "backup.manual_keep_days"
+
+
+def manual_keep_days() -> int:
+    """The window the office chose for the backups it takes by hand."""
+    stored = db.get_setting(SETTING_MANUAL_DAYS)
+    try:
+        value = int(stored)
+    except (TypeError, ValueError):
+        return config.BACKUP_MANUAL_KEEP_DAYS
+    # A value that is no longer on offer falls back rather than being honoured:
+    # the choices are what the screen can show, and an unshowable setting is one
+    # nobody can correct.
+    return value if value in config.BACKUP_MANUAL_KEEP_CHOICES \
+        else config.BACKUP_MANUAL_KEEP_DAYS
+
+
+def is_automatic(path: Path) -> bool:
+    return path.stem.endswith("-auto")
+
+
 def prune_backups() -> list[str]:
-    """Delete backups older than the retention window.
+    """Delete backups older than the window for their kind.
+
+    Two windows, because the two kinds mean different things: the daily
+    automatic rotation is a week deep and the machine's own business, while a
+    backup somebody took by hand was taken for a reason and keeps to whatever
+    window the office chose.
 
     Age decides, but never past the floor: `BACKUP_KEEP_MIN` most recent files
-    survive however old they are. An office that closes for a fortnight must not
-    come back to a backup folder that has tidied itself empty.
+    survive however old they are, and whichever kind they are. An office that
+    closes for a fortnight must not come back to a backup folder that has tidied
+    itself empty.
     """
     files = _backup_files()
+    manual_days = manual_keep_days()
     # Epoch seconds on both sides: st_mtime is one, so the comparison never has
     # to care which timezone the office is in or whether it just changed.
-    cutoff = time.time() - config.BACKUP_KEEP_DAYS * 86400
-    keep = {path for path in files if path.stat().st_mtime >= cutoff}
+    now = time.time()
+    auto_cutoff = now - config.BACKUP_KEEP_DAYS * 86400
+    manual_cutoff = now - manual_days * 86400
+
+    keep = {
+        path for path in files
+        if path.stat().st_mtime >= (auto_cutoff if is_automatic(path) else manual_cutoff)
+    }
     keep.update(files[:config.BACKUP_KEEP_MIN])
 
     removed = []
@@ -80,46 +199,85 @@ def prune_backups() -> list[str]:
     return removed
 
 
-def take_backup(username: str, *, automatic: bool = False) -> dict:
-    """Copy the database, then prune. Used by the button and by the schedule.
+def take_backup(username: str, *, automatic: bool = False,
+                tag: str = "") -> dict:
+    """Copy the database into a zip, then prune.
 
-    SQLite's own backup API copies a live database safely, which the DOS system
-    could never do - back-ups there meant everybody out of the files first.
+    Two steps, and both matter. SQLite's own backup API copies a *live* database
+    safely, which the DOS system could never do - back-ups there meant everybody
+    out of the files first. The zip is what makes the result something an
+    administrator on another PC can actually take away: one file, a third of the
+    size, that a browser will download over the office network.
     """
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Room for the raw copy and the zip at once, since both exist for a moment.
     size_mb = config.DB_PATH.stat().st_size / 1_048_576
     free_mb = _disk_free_mb(BACKUP_DIR)
-    if free_mb < size_mb * 1.1:
+    if free_mb < size_mb * 1.5:
         raise BackupSpaceError(
             f"Not enough disk space: the database is {size_mb:,.0f} MB and only "
             f"{free_mb:,.0f} MB is free. Delete some older backups first.")
 
-    stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
-    target = BACKUP_DIR / f"ims-{stamp}{'-auto' if automatic else ''}.sqlite"
+    # The stamp is only accurate to the second, and two backups can land inside
+    # one - taking a pre-restore copy immediately before a restore does exactly
+    # that. Without the counter the second write silently overwrote the first,
+    # which in the restore path meant the safety copy landing on top of the file
+    # it was about to restore from.
+    # Just the date - `ims-8-31-2026.zip` - because that is what the file is:
+    # the database as it stood on that day. A time of day in the name was noise
+    # in a downloads folder, and the screen shows the exact minute anyway.
+    # Built by hand rather than with strftime: dropping the leading zero is
+    # %-m on Linux and %#m on Windows, and neither is portable.
+    now = datetime.now().astimezone()
+    stamp = f"{now.month}-{now.day}-{now.year}"
+    suffix = "-auto" if automatic else (f"-{tag}" if tag else "")
+    target = BACKUP_DIR / f"ims-{stamp}{suffix}.zip"
+    attempt = 2
+    while target.exists():
+        # A second backup on the same day becomes `ims-8-31-2026-2.zip`. The
+        # counter goes before the kind, so `-auto` and `-prerestore` stay at the
+        # end of the stem where everything else looks for them.
+        target = BACKUP_DIR / f"ims-{stamp}-{attempt}{suffix}.zip"
+        attempt += 1
 
-    # A fresh connection rather than the thread-local one: this runs on a worker
-    # thread when the schedule calls it, and `db.get_connection()` would hand
-    # that thread a connection of its own anyway.
-    source = db.get_connection()
-    destination = sqlite3.connect(target)
+    raw = target.with_suffix(".sqlite.tmp")
+    part = target.with_name(target.name + PART_SUFFIX)
     try:
-        source.backup(destination)
+        # A fresh connection rather than the thread-local one: this runs on a
+        # worker thread when the schedule calls it, and `db.get_connection()`
+        # would hand that thread a connection of its own anyway.
+        source = db.get_connection()
+        destination = sqlite3.connect(raw)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+        raw_mb = raw.stat().st_size / 1_048_576
+
+        with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED,
+                             compresslevel=config.BACKUP_ZIP_LEVEL) as archive:
+            archive.write(raw, MEMBER_NAME)
+
+        # The last step, and the only one that is atomic: until this line there
+        # is no file in the folder that looks like a finished backup.
+        part.replace(target)
     finally:
-        destination.close()
+        raw.unlink(missing_ok=True)
+        part.unlink(missing_ok=True)
 
     removed = prune_backups()
     written_mb = round(target.stat().st_size / 1_048_576, 1)
 
     with db.transaction() as conn:
         db.audit(conn, username, "backup", "database", target.name,
-                 f"{written_mb:,.1f} MB"
-                 + (f", removed {len(removed)} past "
-                    f"{config.BACKUP_KEEP_DAYS} days" if removed else ""))
+                 f"{written_mb:,.1f} MB zipped from {raw_mb:,.1f} MB"
+                 + (f", removed {len(removed)}" if removed else ""))
 
     return {
         "name": target.name,
         "size_mb": written_mb,
+        "database_mb": round(raw_mb, 1),
         "automatic": automatic,
         "removed": removed,
         "backups": _backup_rows(),
@@ -183,7 +341,10 @@ def status(_user: dict = Depends(require("maintenance:run"))) -> dict:
         "backups": backups,
         "last_backup": backups[0] if backups else None,
         "backup_policy": {
+            "folder": str(BACKUP_DIR),
             "keep_days": config.BACKUP_KEEP_DAYS,
+            "manual_keep_days": manual_keep_days(),
+            "manual_choices": list(config.BACKUP_MANUAL_KEEP_CHOICES),
             "keep_min": config.BACKUP_KEEP_MIN,
             "every_hours": config.BACKUP_EVERY_HOURS,
             "next_due": _next_due(backups),
@@ -212,6 +373,276 @@ def backup(user: dict = Depends(require("maintenance:run"))) -> dict:
         return take_backup(user["username"])
     except BackupSpaceError as exc:
         raise HTTPException(status_code=507, detail=str(exc)) from exc
+
+
+@router.post("/retention")
+def retention(payload: dict,
+              user: dict = Depends(require("maintenance:run"))) -> dict:
+    """Choose how long backups taken by hand are kept."""
+    try:
+        days = int(payload.get("manual_keep_days"))
+    except (TypeError, ValueError):
+        days = 0
+    if days not in config.BACKUP_MANUAL_KEEP_CHOICES:
+        offered = ", ".join(str(n) for n in config.BACKUP_MANUAL_KEEP_CHOICES)
+        raise HTTPException(status_code=400,
+                            detail=f"Choose one of {offered} days.")
+
+    with db.transaction() as conn:
+        db.set_setting(conn, SETTING_MANUAL_DAYS, days)
+        db.audit(conn, user["username"], "settings", "backup", SETTING_MANUAL_DAYS,
+                 f"manual backups kept {days} days")
+
+    # Applied straight away, so a shortened window takes effect now rather than
+    # at whatever hour the next backup happens to be taken.
+    removed = prune_backups()
+    return {"manual_keep_days": days, "removed": removed, "backups": _backup_rows()}
+
+
+# --------------------------------------------------------------------------- #
+# Restore
+# --------------------------------------------------------------------------- #
+
+def _find_backup(name: str) -> Path:
+    """Resolve a backup by name, refusing anything that is not one of ours.
+
+    The name arrives from the browser, so it is matched against the directory
+    listing rather than joined onto a path - `../../etc/passwd` never becomes a
+    path here because it is never treated as one.
+    """
+    for path in _backup_files():
+        if path.name == name:
+            return path
+    raise HTTPException(status_code=404, detail=f"No backup named {name!r}.")
+
+
+def extract_backup(path: Path, into: Path) -> Path:
+    """Expand a backup zip to a working file. Returns the database inside it."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = [n for n in archive.namelist() if n.endswith(".sqlite")]
+            if not names:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{path.name} contains no database file. It is not a "
+                           f"backup of this system.")
+            archive.extract(names[0], into)
+            return into / names[0]
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{path.name} is not a readable zip ({exc}). It may have been "
+                   f"cut short - check for a newer backup.") from exc
+
+
+def inspect_backup(path: Path) -> dict:
+    """Open a backup and decide whether it is safe to restore from.
+
+    Restoring a truncated or half-written file over a working database would be
+    worse than the problem being fixed, so nothing is overwritten until the file
+    has been expanded, passed an integrity check, and been found to contain the
+    tables this version of the code expects.
+    """
+    with open_backup(path) as inner:
+        return _inspect_database(inner, path, path.stat().st_size)
+
+
+def _inspect_database(inner: Path, path: Path, zipped: int) -> dict:
+    try:
+        conn = sqlite3.connect(f"{inner.as_uri()}?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        raise HTTPException(status_code=400,
+                            detail=f"{path.name} cannot be opened: {exc}") from exc
+
+    try:
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        if integrity != "ok":
+            raise HTTPException(
+                status_code=400,
+                detail=f"{path.name} failed its integrity check ({integrity}). "
+                       f"It is damaged and will not be restored.")
+
+        present = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")}
+        reference = db.reference_schema()
+        try:
+            expected = {row["name"] for row in reference.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' "
+                "AND name NOT LIKE 'sqlite_%'")}
+        finally:
+            reference.close()
+
+        missing = sorted(expected - present)
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{path.name} is missing {len(missing)} table(s) this version "
+                       f"needs ({', '.join(missing[:4])}). It is from an older system.")
+
+        counts = {}
+        for table in ("invoices", "customers", "stock", "collections", "stock_moves"):
+            counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    finally:
+        conn.close()
+
+    stat = path.stat()
+    return {
+        "name": path.name,
+        "size_mb": round(zipped / 1_048_576, 1),
+        "database_mb": round(inner.stat().st_size / 1_048_576, 1),
+        "taken_at": datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat(
+            timespec="seconds"),
+        "automatic": is_automatic(path),
+        "rows": counts,
+    }
+
+
+# GET *and* HEAD. The screen asks for the headers before pointing the browser at
+# the file, so a backup that is no longer there can be reported in the page
+# instead of failing silently in the downloads tray. Without HEAD registered
+# here the probe falls through to the catch-all and answers 404 for every
+# backup, which turns the safety check into an outage.
+@router.api_route("/backups/{name}/download", methods=["GET", "HEAD"])
+def download_backup(name: str,
+                    user: dict = Depends(require("maintenance:run"))) -> FileResponse:
+    """Send a backup to whoever asked for it.
+
+    This is the point of the zip. The person running this system is almost never
+    sitting at the server - they are at a counter PC on the office network, and
+    a file written to the server's own disk is one they cannot reach, cannot
+    copy to a memory stick, and cannot take home. A download turns the backup
+    into something they actually hold.
+
+    The server keeps its copy either way, so a download that fails halfway
+    through - the connection drops, the power goes off - costs nothing but the
+    click. Press it again.
+    """
+    path = _find_backup(name)
+    with db.transaction() as conn:
+        db.audit(conn, user["username"], "download", "backup", path.name,
+                 f"{path.stat().st_size / 1_048_576:,.1f} MB")
+    media = "application/zip" if path.suffix == ".zip" else "application/octet-stream"
+    return FileResponse(path, media_type=media, filename=path.name)
+
+
+@router.delete("/backups/{name}")
+def delete_backup(name: str,
+                  user: dict = Depends(require("maintenance:run"))) -> dict:
+    """Remove one backup.
+
+    Retention already sweeps up on its own, so this is for the times it does not
+    fit: a copy taken before something that turned out fine, a folder filling a
+    small disk, a `-prerestore` nobody needs any more. The floor that stops
+    *automatic* pruning emptying the folder does not apply here - somebody
+    typing a filename and confirming it means to delete that file - but the
+    screen says when it is the last one left.
+    """
+    path = _find_backup(name)
+    remaining = len(_backup_files()) - 1
+    size_mb = round(path.stat().st_size / 1_048_576, 1)
+    path.unlink()
+
+    with db.transaction() as conn:
+        db.audit(conn, user["username"], "delete", "backup", name,
+                 f"{size_mb:,.1f} MB, {remaining} left")
+    print(f"  Backups : {name} deleted by {user['username']}, "
+          f"{remaining} left", flush=True)
+
+    return {"deleted": name, "size_mb": size_mb, "remaining": remaining,
+            "backups": _backup_rows()}
+
+
+@router.get("/restore-preview")
+def restore_preview(name: str,
+                    _user: dict = Depends(require("maintenance:run"))) -> dict:
+    """What restoring this backup would put back, and what it would replace."""
+    backup_info = inspect_backup(_find_backup(name))
+    return {
+        "backup": backup_info,
+        "current": {
+            table: db.scalar(f"SELECT COUNT(*) FROM {table}", (), 0)
+            for table in backup_info["rows"]
+        },
+    }
+
+
+@router.post("/restore")
+def restore(payload: dict, user: dict = Depends(require("maintenance:run"))) -> dict:
+    """Put a backup back, over everything now in the database.
+
+    The whole database is replaced, so this is the one action here that can lose
+    work. Three things stand between a mistaken click and a bad day:
+
+    1. the confirmation has to be typed, as it does for a purge;
+    2. the file is verified before anything is overwritten;
+    3. a copy of the *current* database is taken first, so the restore itself
+       can be undone by restoring that copy.
+
+    The copy is made through SQLite's backup API rather than by swapping files
+    on disk: the server is running, other threads hold their own connections to
+    this database, and replacing the file underneath them would leave every one
+    of those connections pointing at something that no longer exists.
+    """
+    if str(payload.get("confirm", "")).strip().upper() != "RESTORE":
+        raise HTTPException(status_code=400,
+                            detail="Type RESTORE to confirm. Nothing has been changed.")
+
+    source_path = _find_backup(str(payload.get("name", "")))
+    backup_info = inspect_backup(source_path)
+
+    # Taken before anything is touched, and tagged so it is obvious what it is.
+    try:
+        safety = take_backup(user["username"], tag="prerestore")
+    except BackupSpaceError as exc:
+        raise HTTPException(status_code=507, detail=str(exc)) from exc
+
+    # Belt and braces on a path that cannot be allowed to eat its own source.
+    # `take_backup` gives every copy a unique name, so this should be
+    # unreachable; it is here because the failure it guards against is silent.
+    if (BACKUP_DIR / safety["name"]).resolve() == source_path.resolve():
+        raise HTTPException(
+            status_code=500,
+            detail="The safety copy collided with the backup being restored. "
+                   "Nothing has been changed.")
+
+    with open_backup(source_path) as inner:
+        live = db.get_connection()
+        source = sqlite3.connect(f"{inner.as_uri()}?mode=ro", uri=True)
+        try:
+            source.backup(live)
+        except sqlite3.Error as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"The restore failed and the database is unchanged: {exc}. "
+                       f"The copy taken beforehand is {safety['name']}.") from exc
+        finally:
+            source.close()
+
+    # The backup may predate a schema change, so bring it up to what this code
+    # expects before anything reads it.
+    added = db.init_db()
+
+    # Every session in the database is now whatever was in the backup, so nobody
+    # is meaningfully signed in any more. Clearing them says so rather than
+    # leaving people half-authenticated against restored rows.
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM sessions")
+        # Written after the restore, into the restored database - an entry
+        # written before it would have been overwritten by the very next line.
+        db.audit(conn, user["username"], "restore", "database", source_path.name,
+                 f"restored from {source_path.name}; "
+                 f"previous database saved as {safety['name']}")
+
+    print(f"  Restore: {source_path.name} restored by {user['username']}; "
+          f"previous database saved as {safety['name']}", flush=True)
+
+    return {
+        "restored": backup_info,
+        "safety_copy": safety["name"],
+        "schema_updated": added,
+        "signed_out": True,
+        "backups": _backup_rows(),
+    }
 
 
 @router.post("/check")

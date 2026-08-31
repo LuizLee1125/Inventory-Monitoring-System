@@ -94,6 +94,31 @@ the window stops the server. To use a different port:
 .\start.bat 9000
 ```
 
+### Restarting
+
+**Stop the old server before starting a new one.** Two copies cannot share a port: the second one
+fails to start while the first carries on serving, so the screen keeps showing the old version and a
+restart appears to do nothing. `start.bat` now checks first and says so rather than letting that
+happen silently:
+
+```
+ ALREADY RUNNING - nothing was started
+ Something is already serving port 8080 (process 9160).
+ ...
+     taskkill /PID 9160 /F
+```
+
+Closing the server's console window is the normal way to stop it. If that window is gone but the
+process is not:
+
+```bash
+netstat -ano -p TCP | findstr :8080
+taskkill /PID <the number from the last column> /F
+```
+
+A sign you are looking at a server that never restarted: the maintenance screen says *"The server is
+running an older version than this page."*
+
 ### 4. Sign in
 
 Everyone from the legacy `PASSFYL` is migrated with the password they already knew — now stored as a
@@ -613,7 +638,7 @@ The API is self-documenting: with the server running, open **`/api/docs`**.
 | Collections | `GET /api/collections`, `/{id}`, `/open-invoices/{customer}`, `POST`, `POST /{id}/reverse` |
 | Reports | `/api/reports/dashboard`, `aging`, `sales`, `purchases`, `inventory`, `expiring`, `depleted`, `movers`, `collections`, `inactive-customers` |
 | Admin | `/api/admin/users`, `roles`, `sessions`, `audit`, `stats` |
-| Maintenance | `GET /api/maintenance/status`, `purge-preview`; `POST /api/maintenance/backup`, `check`, `compact`, `purge` |
+| Maintenance | `GET /api/maintenance/status`, `purge-preview`, `restore-preview`; `POST /api/maintenance/backup`, `restore`, `retention`, `check`, `compact`, `purge` |
 | Archive | `GET /api/archive/summary`, `/api/archive/{kind}`, `/api/archive/{kind}/{number}`, `/api/archive/moves/by-item/{code}` |
 
 ---
@@ -693,7 +718,10 @@ Every setting is an environment variable, so nothing needs editing to move betwe
 | `IMS_FRONTEND` | `frontend/` | Folder the browser application is served from |
 | `IMS_LEGACY_DIR` | `legacy/` | Where `migrate.py` looks for `.DBF` files |
 | `IMS_PLAINTEXT_DIR` | `database/plaintext/` | Where `dump_db.py` writes the text dump |
-| `IMS_BACKUP_DAYS` | `7` | How long a backup is kept |
+| `IMS_BACKUP_DIR` | `backups/` | Where backups are written |
+| `IMS_BACKUP_ZIP_LEVEL` | `1` | Deflate level; `6` is ~25% smaller and ~3× slower |
+| `IMS_BACKUP_DAYS` | `7` | How long an automatic backup is kept |
+| `IMS_BACKUP_MANUAL_DAYS` | `14` | Manual window, until the office chooses one on the screen |
 | `IMS_BACKUP_KEEP_MIN` | `3` | Newest backups kept regardless of age |
 | `IMS_BACKUP_HOURS` | `24` | Hours between automatic backups; `0` turns them off |
 | `IMS_HOST` / `IMS_PORT` | `0.0.0.0` / `8080` | Bind address and port |
@@ -707,37 +735,113 @@ Every setting is an environment variable, so nothing needs editing to move betwe
 
 **The server backs itself up.** While it is running it takes a copy every 24 hours, and it takes one
 at startup if the newest is already older than that — so a PC switched on for an hour a day still
-gets its daily backup. Copies land in `database\backups` as `ims-YYYYMMDD-HHMMSS-auto.sqlite`. The
-button on **Backup & Database** takes one on top of that, without the `-auto`, so the list shows at a
-glance whether the week filled itself or was filled by hand.
+gets its daily backup. The button on **Backup & Database** takes one on top of that.
+
+Backups go in **`backups\`, at the top of the project**, next to `start.bat`. Each is a **zip**
+holding the whole database, named with the date it was taken:
+
+```
+ims-8-31-2026.zip                the one you took
+ims-8-31-2026-auto.zip           the daily one
+ims-8-31-2026-prerestore.zip     saved just before a restore
+ims-8-31-2026-2.zip              a second one taken by hand the same day
+```
+
+Just the date, because that is what the file is: the database as it stood that day. The list on
+screen shows the exact minute.
+
+On this office's 1,186 MB database a backup comes out at **387 MB in about 6 seconds**.
 
 They are taken with SQLite's own online backup API, which copies a live database safely — nobody has
 to be out of the system, which is the one thing the DOS Monday-to-Saturday floppy rotation always
 demanded.
 
+### Getting a backup off the server
+
+**You are probably not sitting at the server.** It is a PC in the corner of the office; you are at a
+counter machine reaching it over the network. A file on its disk is not one you can put on a memory
+stick or take home.
+
+So every backup in the list has a **Download** button, and pressing **Back up now** downloads the
+new one to whatever machine you pressed it from. It arrives as an ordinary browser download — one
+zip, about a third of the size of the database.
+
+**This works on a phone**, and the screen is built for it: the backups show as a list rather than a
+table, so Download, Restore and Delete are under your thumb instead of off the side of a table you
+would have to scroll sideways. The file lands wherever that phone puts downloads — the Files app on
+an iPhone, the Downloads folder on Android — and can be shared on from there. Mind the size on mobile
+data: a backup of a 1.2 GB database is around 387 MB.
+
+The server keeps its own copy regardless. If the download fails halfway, the power goes off, or the
+network drops, nothing is lost: press Download again. And a backup interrupted while it was being
+written is left as a `.part` file and cleared away at the next startup, so a half-written file is
+never mistaken for a backup you could restore from.
+
+> **A backup that only exists on the server does not survive that PC failing.** Download one now and
+> then and put it somewhere else — a memory stick, another machine, the `\\server` share.
+
+### Upgrading from an earlier version
+
+Backups used to be plain `.sqlite` files in `database\backups`. On the first start after this change
+they are **moved into `backups\` automatically**, and they keep working: they are still listed, still
+downloadable, and still restorable. Only new backups are zipped.
+
 ### What is kept
 
-| Rule | Value | Environment variable |
+There are **two windows**, because the two kinds of backup mean different things. The daily rotation
+is the machine's own housekeeping; a backup somebody took by hand was taken for a reason, usually
+just before something risky, and should outlive it.
+
+| Rule | Value | Set where |
 | --- | --- | --- |
-| Backups older than this are deleted | 7 days | `IMS_BACKUP_DAYS` |
+| Automatic backups are deleted after | 7 days | `IMS_BACKUP_DAYS` |
+| Backups taken by hand are deleted after | **7 or 14 days, your choice** | Backup & Database screen |
 | ...but never fewer than this many survive | 3 | `IMS_BACKUP_KEEP_MIN` |
 | Hours between automatic backups (`0` turns them off) | 24 | `IMS_BACKUP_HOURS` |
 
+The manual window is a choice, not a setting file: pick **7 days** or **14 days** on the maintenance
+screen and it is remembered in the database. Shortening it applies immediately rather than at the
+next backup. `IMS_BACKUP_MANUAL_DAYS` is only the answer until somebody chooses.
+
 The floor is the important half. Age alone would mean an office that closed for a fortnight came back
 to a backup folder that had tidied itself empty — so the three most recent always survive, however
-old they are.
+old they are, whichever kind they are.
+
+### Deleting one
+
+Every backup has a **Delete** next to Restore, for the times retention does not fit — a copy taken
+before something that turned out fine, a `-prerestore` nobody needs, a folder filling a small disk.
+It asks first, says how much space it frees, and if it is the last backup on the server it says that
+too. A copy you have already downloaded is not affected.
+
+### Putting a backup back
+
+**Backup & Database → the backups list → Restore.** It shows what the backup holds against what is in
+the database now, row counts side by side, so the only question that matters — what changes — is
+answered before anything is touched. Confirm by typing `RESTORE`.
+
+Three things stand between a mistaken click and a bad day:
+
+1. the confirmation has to be typed, as it does for a purge;
+2. the file is opened and verified first — a damaged or truncated backup is refused, and one missing
+   tables this version needs is refused as too old;
+3. **a copy of the current database is taken first**, tagged `-prerestore`, so the restore itself can
+   be undone by restoring that copy. It appears in the list as *before a restore*.
+
+Everyone is signed out, including whoever pressed the button: the accounts and sessions come from the
+backup as well. Sign in again afterwards. Note that a restore also rolls back the manual-retention
+choice, since that lives in the database too.
 
 **Budget the disk.** Seven daily copies of a 1.2 GB database is roughly 8.5 GB. The maintenance
 screen shows the running total and the free space beside it; if that is tight, lower `IMS_BACKUP_DAYS`
 rather than switching the schedule off.
 
-### This is not off-site
+### Copying them off automatically
 
-A backup on the same disk does not survive that disk failing. Copy them somewhere else as well — a
-scheduled task is enough:
+Downloading by hand covers the day you think of it. For the days you do not, a scheduled task:
 
 ```bash
-robocopy database\backups "\\server\ims-backups" /MIR
+robocopy backups "\\server\ims-backups" /MIR
 ```
 
 ---

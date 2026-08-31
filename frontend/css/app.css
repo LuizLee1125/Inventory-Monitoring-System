@@ -108,6 +108,8 @@
   /* A shaft and a head — an arrow. One icon; the fall is the same mark turned
      180°, so the two directions can never drift apart. */
   --icon-arrow-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 16.4V4.6'/%3E%3Cpath d='m5 9.6 5-5 5 5'/%3E%3C/svg%3E");
+  --icon-download: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 3v9'/%3E%3Cpath d='m5.8 8.2 4.2 4.2 4.2-4.2'/%3E%3Cpath d='M3.4 15.6h13.2'/%3E%3C/svg%3E");
+  --icon-folder: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.6 5.4a1.4 1.4 0 0 1 1.4-1.4h3l1.6 2h6a1.4 1.4 0 0 1 1.4 1.4v7.2a1.4 1.4 0 0 1-1.4 1.4H4a1.4 1.4 0 0 1-1.4-1.4Z'/%3E%3C/svg%3E");
 
   --sidebar-w: 236px;
   --topbar-h: 60px;
@@ -943,6 +945,114 @@ a { color: var(--primary); }
 }
 .section-head span { font-size: var(--fs-xs); color: var(--text-faint); }
 
+/* A standing message about the state of the system, as opposed to a hint about
+   the control beside it. Loud enough to be read as an instruction. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+.notice .ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 17px; height: 17px;
+  margin-top: 1px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+.notice .ico::after {
+  content: "!";
+  color: var(--surface);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-bold);
+}
+.notice.warn { background: var(--warn-soft); color: var(--warn); }
+
+/* Where the backups are, said plainly and once, on the screen of somebody who
+   is probably not at that machine. */
+.backup-where {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--primary-soft);
+  color: var(--on-primary-soft);
+}
+.backup-where code {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  word-break: break-all;
+}
+.backup-where .ico {
+  flex: none;
+  width: 15px; height: 15px;
+  margin-top: 2px;
+  background: currentColor;
+  -webkit-mask: var(--icon-folder) center / contain no-repeat;
+  mask: var(--icon-folder) center / contain no-repeat;
+}
+
+.row-actions { display: inline-flex; gap: var(--sp-2); }
+
+/* The backups, as a list rather than a table. A table put Download, Restore and
+   Delete in a seventh column 959px into a 341px phone window — present, and
+   unreachable without scrolling a table sideways inside a page. Backing up is
+   what somebody does from wherever they are, so this list wraps instead: on a
+   handset the buttons drop under the name at a size a thumb can hit. */
+.backup-list { list-style: none; margin: 0; padding: 0; }
+.backup-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.backup-item:last-child { border-bottom: 0; }
+.backup-item:hover { background: var(--surface-2); }
+
+.b-main { min-width: 0; flex: 1 1 260px; }
+.b-name {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  word-break: break-all;
+}
+.b-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.b-meta .dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .5; }
+
+.b-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); flex: none; }
+
+@media (max-width: 560px) {
+  /* Full width and taller, because this is now a thumb rather than a pointer. */
+  .b-actions { flex: 1 1 100%; }
+  .b-actions .btn { flex: 1; justify-content: center; padding: var(--sp-2); }
+}
+.ico-download {
+  width: 13px; height: 13px;
+  background: currentColor;
+  -webkit-mask: var(--icon-download) center / contain no-repeat;
+  mask: var(--icon-download) center / contain no-repeat;
+}
+
 /* A row of tags that wraps, for a list too long to read as prose. */
 .chips {
   display: flex;
@@ -1386,6 +1496,10 @@ table.grid td.wrap {
 .btn.danger:hover { background: var(--danger-soft); }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--text-dim); }
 .btn.ghost:hover { background: var(--surface-2); color: var(--text); }
+/* Ghost *and* danger: no border, but the colour of the thing it does. Declared
+   after both so it wins whichever order they are written in. */
+.btn.ghost.danger { border-color: transparent; color: var(--danger); }
+.btn.ghost.danger:hover { background: var(--danger-soft); color: var(--danger); }
 .btn.sm { padding: var(--sp-1) var(--sp-2); font-size: var(--fs-xs); border-radius: var(--radius); }
 .btn.block { width: 100%; justify-content: center; padding: var(--sp-3); }
 
@@ -2435,6 +2549,8 @@ input[type="date"] { min-height: 34px; }
   box-shadow: var(--shadow);
 }
 .segment .ico { font-size: var(--fs-lg); line-height: 1; }
+.segment:disabled { opacity: .45; cursor: not-allowed; }
+.segment:disabled:hover { color: var(--text-dim); }
 
 
 /* ----------------------------------------------------------- responsive -- */

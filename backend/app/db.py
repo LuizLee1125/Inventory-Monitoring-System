@@ -260,6 +260,28 @@ def bump_sequence_past(conn: sqlite3.Connection, sequence: str, seen: int) -> No
 
 
 # --------------------------------------------------------------------------- #
+# settings
+# --------------------------------------------------------------------------- #
+# Choices the office makes and the system remembers, as opposed to the ones the
+# machine is configured with. An environment variable is the right home for
+# "where is the database"; this is the right home for "how long do we keep our
+# own backups", because the answer belongs to the business and should survive
+# being moved to a new PC inside the database itself.
+
+def get_setting(key: str, default: str | None = None) -> str | None:
+    row = query_one("SELECT value FROM settings WHERE key = ?", (key,))
+    return row["value"] if row else default
+
+
+def set_setting(conn: sqlite3.Connection, key: str, value: object) -> None:
+    conn.execute(
+        "INSERT INTO settings(key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, str(value)),
+    )
+
+
+# --------------------------------------------------------------------------- #
 # auditing
 # --------------------------------------------------------------------------- #
 

@@ -48,9 +48,12 @@ Databases are opened read-only, so this is safe to run while the server is up.
 from __future__ import annotations
 
 import argparse
+import shutil
 import sqlite3
 import struct
 import sys
+import tempfile
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -457,14 +460,17 @@ def write_journal_report(source: Path, out_dir: Path) -> Path | None:
 
 # --------------------------------------------------------------------------- #
 
-def dump_database(source: Path, out_dir: Path, args) -> None:
+def dump_database(source: Path, out_dir: Path, args, label: str = "") -> None:
     """Write one database - live or backup - into its own folder.
 
     A dump leaves the database exactly as it found it, journal files included:
     a backup that arrived without a `-wal` still has none afterwards.
+
+    `label` names the file the reader knows about, which for a backup is the zip
+    rather than the temporary copy expanded out of it.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"\n{source.name}  ->  {out_dir}")
+    print(f"\n{label or source.name}  ->  {out_dir}")
 
     # Both of these happen before the database is opened: see write_journal_report.
     pre_existing = {p for p in journal_files(source) if p.exists()}
@@ -529,11 +535,32 @@ def _dump_tables(conn: sqlite3.Connection, source: Path, out_dir: Path,
 def backups_to_dump(which: str) -> list[Path]:
     if which == "skip":
         return []
-    found = sorted(config.BACKUP_DIR.glob("ims-*.sqlite"), reverse=True)
+    found = sorted(config.BACKUP_DIR.glob("ims-*.zip"), reverse=True)
     if not found:
         print(f"No backups in {config.BACKUP_DIR}.")
         return []
     return found[:1] if which == "latest" else found
+
+
+def dump_zipped_backup(archive_path: Path, out_dir: Path, args) -> None:
+    """Dump a backup, which is a zip with the database inside it.
+
+    Expanded to a temporary file rather than read in place: SQLite needs a real
+    file on disk, and a 1.2 GB database is not something to hold in memory.
+    """
+    work = Path(tempfile.mkdtemp(prefix="ims-dump-"))
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            names = [n for n in archive.namelist() if n.endswith(".sqlite")]
+            if not names:
+                print(f"  {archive_path.name}: no database inside, skipped")
+                return
+            archive.extract(names[0], work)
+        dump_database(work / names[0], out_dir, args, label=archive_path.name)
+    except zipfile.BadZipFile as exc:
+        print(f"  {archive_path.name}: not a readable zip ({exc}), skipped")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def main() -> None:
@@ -572,7 +599,7 @@ def main() -> None:
             sys.exit(f"No database at {config.DB_PATH}. Run backend/migrate.py first.")
         dump_database(config.DB_PATH, out_root / "live", args)
         for backup in backups_to_dump(args.backups):
-            dump_database(backup, out_root / "backups" / backup.stem, args)
+            dump_zipped_backup(backup, out_root / "backups" / backup.stem, args)
 
     print(f"\nDone. Open {out_root} in the editor.")
     if args.limit:

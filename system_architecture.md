@@ -355,7 +355,15 @@ Retention is by **age with a floor**, not by count. It used to keep the newest
 needs to know is "how far back can I go", and a count only answers that if you
 also know how often backups were taken.
 
-- `BACKUP_KEEP_DAYS` (7) — anything older is deleted.
+- `BACKUP_KEEP_DAYS` (7) — how long an **automatic** backup lives. Fixed: the
+  daily rotation is the machine's own housekeeping.
+- **The manual window is the office's choice, 7 days or 14**, and it lives in
+  the `settings` table rather than in the environment. An environment variable
+  is the right home for "where is the database"; this answer belongs to the
+  business and should follow it onto a new PC. A stored value that is no longer
+  one of the offered choices falls back rather than being honoured — the choices
+  are what the screen can show, and an unshowable setting is one nobody can
+  correct.
 - `BACKUP_KEEP_MIN` (3) — **the floor, and the important half.** Age alone would
   mean an office that closed for a fortnight came back to a folder that had
   tidied itself empty. That is the one state a backup system must never reach,
@@ -380,10 +388,150 @@ A scheduled backup that fails is logged and skipped; the next tick tries again.
 It must never take the server down, and the maintenance screen goes on showing
 the real last-backup time rather than a comforting one.
 
-Automatic copies are named `ims-…-auto.sqlite`. The suffix is the whole
-mechanism behind the "By" column on the maintenance screen — there is no
-database table of backups, and the filesystem already knows. `dump_db.py`
-globs `ims-*.sqlite`, so it still finds them.
+### The administrator is not at the server
+
+This is the fact the whole design turns on. The server is a PC in the corner of
+the office; the person who presses "Back up now" is at a counter machine on the
+LAN. A file written to the server's disk is one they cannot put on a memory
+stick, cannot take home, and cannot reach at all if that PC is the thing that
+has gone wrong.
+
+So a backup is a **zip**, and there is a **download** for every one of them —
+`GET /maintenance/backups/{name}/download`, a plain `<a download>` in the table
+so the browser handles progress and where the file lands. Pressing "Back up now"
+downloads the new one automatically: the click should end with the file on the
+machine that made it.
+
+**And "another machine" includes a phone.** The backups are a `<ul>`, not a
+`dataTable`, and that is the whole reason: as a table the three actions sat in a
+seventh column 959px into a 341px handset window — present, and reachable only
+by scrolling a table sideways inside a page, which in practice means nobody
+finds them. As a list the name and its details stack, and below 560px the
+buttons go full width. This is the one screen that has to work on a handset,
+because backing up is what somebody does from wherever they happen to be.
+
+Three consequences worth keeping:
+
+- **The server keeps its copy either way.** The download is a convenience on top
+  of a backup that already exists, so a dropped connection or a power cut
+  mid-transfer costs nothing but the click.
+- **The zip is written to `.part` and renamed at the end.** The rename is the
+  only atomic step, so a power cut leaves a file nobody will mistake for a
+  backup rather than a truncated `.zip` that looks like one. `tidy_backup_dir()`
+  sweeps them at startup.
+- **Level 1 deflate, not the default 6.** Measured on this office's own 1,186 MB
+  database: level 1 gives 387 MB in 6 seconds, level 6 gives 298 MB in 19. The
+  extra 89 MB is not worth thirteen seconds of somebody watching a button.
+
+`BACKUP_DIR` moved to `backups/` at the top of the project, out of `database/`.
+It is the one folder somebody has to find in a hurry, possibly over the phone,
+and `backups` next to `start.bat` is a folder you can talk a person to.
+`tidy_backup_dir()` moves anything left in the old location on startup — with
+`rename`, which within one drive moves no bytes and needs no free space.
+
+**Both formats are listed.** New backups are zips; an office upgrading to this
+version has a folder of plain `.sqlite` copies that are perfectly good backups
+of its real business. `open_backup()` yields the database inside either — a temp
+extraction for a zip, the file itself for a `.sqlite`, which must not then be
+deleted on the way out. Hiding somebody's existing backups because the format
+changed would be the worst possible way to introduce a new one.
+
+### The name reads as a date, so the order comes from the clock
+
+`ims-8-31-2026.zip` — the date the way the office writes it and nothing else,
+because the file's job is to still mean something in somebody's Downloads folder
+a week later, and a time of day was noise there. `-auto` and `-prerestore` mark
+the kind; a second backup on the same day becomes `ims-8-31-2026-2.zip`. Built
+by hand rather than with `strftime`: dropping the leading zero is `%-m` on Linux
+and `%#m` on Windows, and neither is portable.
+
+**That name does not sort**, and the list used to be ordered by sorting it.
+`10-1-2026` comes before `8-31-2026` as text, so October would have been filed
+as the oldest backup in the folder. `_backup_files()` now orders by modified
+time, which is what retention and "last backup" already read — so the whole
+feature agrees with itself, and files from both naming schemes interleave
+correctly.
+
+### `HEAD` has to be registered, not assumed
+
+The download button asks for the headers before pointing the browser at the
+file, so a backup that is no longer there is reported in the page instead of
+failing as "Failed - No file" in the downloads tray, which says nothing and
+looks like a bug in the application.
+
+That probe only works because the route is registered `methods=["GET", "HEAD"]`.
+Starlette did **not** add HEAD for the plain `@router.get`, so the probe fell
+through to the `/api/{rest:path}` catch-all and answered 404 for every backup —
+turning a safety check into an outage. It was caught by testing the probe
+against a file that definitely existed, which is the test worth remembering:
+check the success path of an error handler, not just the error path.
+
+### A screen newer than its server must still say so
+
+Workstations hold this page open for days, so it is routinely a version ahead of
+the server. The first cut of the retention picker was **hidden** when the server
+reported no policy, which is the worst of both: the documentation says the
+setting exists, the screen shows nothing, and the reason sits in the middle of a
+paragraph of body text where it reads as prose.
+
+It is now always drawn, disabled, with the reason on the control itself and a
+warning banner above the card. **A control that is present and explained beats a
+control that has vanished** — the second one sends somebody hunting.
+
+The kind tag falls back to reading the filename when the server sends no `kind`,
+and reads it as a **suffix on the stem** (`/-auto$/`) rather than as a substring.
+`ims-8-31-2026-auto.zip` and the older `ims-20260831-092119-auto.sqlite` both
+resolve, and a name that merely contains the word cannot be mislabelled.
+
+The kind is carried in the filename — `-auto`, `-prerestore`, or neither for one
+taken by hand. That suffix is the whole mechanism behind the "By" column and
+behind which window a file is pruned by: there is no database table of backups,
+and the filesystem already knows. `dump_db.py` globs `ims-*.sqlite`, so it still
+finds all of them.
+
+**Names must be unique, and the second stamp is not enough.** Two backups can
+land inside one second — taking a pre-restore copy immediately before a restore
+does exactly that — and the second write silently overwrote the first. In the
+restore path that meant the safety copy landing on top of the file it was about
+to restore from, so the restore put back the database it was supposed to be
+replacing. `take_backup()` now appends `-2`, `-3` on collision, **before** the
+kind, so `-auto` and `-prerestore` stay at the end of the stem where everything
+looks for them.
+
+### Restoring
+
+The one action here that can lose work, so most of it is the safety.
+
+**The copy goes through SQLite's backup API, not through the filesystem.**
+`source.backup(live_connection)` writes the backup's pages into the database the
+server already has open. Swapping the file on disk would leave every other
+thread's connection pointing at something that no longer exists; this way there
+is nothing to reopen and nothing to coordinate.
+
+The order matters and each step is there for a reason:
+
+1. **Typed confirmation** — `RESTORE`, as a purge needs `PURGE`.
+2. **Verify before overwriting.** `inspect_backup()` opens the file read-only
+   and immutable, runs `integrity_check`, and compares its tables against
+   `db.reference_schema()`. A truncated file or one from an older system is
+   refused while the database is still untouched.
+3. **Safety copy first**, tagged `-prerestore`, so the restore is itself
+   undoable. Plus an explicit guard that it did not collide with the source —
+   unreachable now, but the failure it catches is silent.
+4. **`db.init_db()` afterwards.** A backup can predate a schema change, so the
+   restored database is brought up to what the running code expects before
+   anything reads it.
+5. **Sessions cleared, then the audit entry.** In that order, and after the
+   restore: an entry written beforehand would have been overwritten by the very
+   next step, and every session in the database now belongs to whenever the
+   backup was taken, so nobody is meaningfully signed in.
+
+The name from the browser is matched against the directory listing rather than
+joined onto a path, so `../../etc/passwd` never becomes a path at all.
+
+A restore also rolls back the manual-retention choice, because that lives in the
+`settings` table. That is consistent rather than surprising once you know where
+the setting lives, and it is in the README.
 
 ## The sign-in screen
 

@@ -35,13 +35,35 @@ SCHEMA_DIR = APP_DIR / "schema"
 PLAINTEXT_DIR = Path(
     os.getenv("IMS_PLAINTEXT_DIR", DB_PATH.parent / "plaintext")).resolve()
 
-# Backups, named ims-YYYYMMDD-HHMMSS.sqlite (with -auto for the scheduled ones).
-# Defined here rather than in the router so dump_db.py can find them too.
-BACKUP_DIR = DB_PATH.parent / "backups"
+# Backups: zip files named ims-YYYYMMDD-HHMMSS.zip, with -auto for the scheduled
+# ones and -prerestore for the copy taken before a restore.
+#
+# At the top of the project rather than tucked inside database\, because this is
+# the one folder somebody has to be able to find in a hurry — on the worst day,
+# from a machine that is not this one, possibly over somebody's shoulder on the
+# phone. `backups` next to `start.bat` is a folder you can talk a person to.
+BACKUP_DIR = Path(os.getenv("IMS_BACKUP_DIR", REPO_DIR / "backups")).resolve()
 
-# How long a backup is kept. The DOS system rotated Monday-to-Saturday floppies;
-# this is the same week, without anybody carrying a box to the safe.
+# Where they used to live. Anything still in here is moved on startup, so an
+# upgrade does not orphan the backups the office already has.
+LEGACY_BACKUP_DIR = DB_PATH.parent / "backups"
+
+# Deflate at its fastest setting. Measured on this office's own 1,186 MB
+# database: level 1 gives 387 MB in 6 seconds, level 6 gives 298 MB in 19. The
+# extra 89 MB is not worth thirteen seconds of somebody watching a button.
+BACKUP_ZIP_LEVEL = int(os.getenv("IMS_BACKUP_ZIP_LEVEL", "1"))
+
+# How long an *automatic* backup is kept. The DOS system rotated
+# Monday-to-Saturday floppies; this is the same week, without anybody carrying a
+# box to the safe. Fixed, because the daily rotation is the machine's job.
 BACKUP_KEEP_DAYS = int(os.getenv("IMS_BACKUP_DAYS", "7"))
+
+# A backup somebody took by hand is a different thing: it was taken deliberately,
+# usually just before something risky, and it should outlive the daily rotation.
+# The office picks its own window on the maintenance screen; the value lives in
+# the settings table, and this is only the answer until they do.
+BACKUP_MANUAL_KEEP_CHOICES = (7, 14)
+BACKUP_MANUAL_KEEP_DAYS = int(os.getenv("IMS_BACKUP_MANUAL_DAYS", "14"))
 
 # ...and the floor that age alone cannot go below. An office that closes for a
 # fortnight would otherwise come back to a backup folder that had tidied itself

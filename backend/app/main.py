@@ -83,6 +83,16 @@ async def lifespan(app: FastAPI):
     for address in lan_addresses():
         print(f"  Network  : http://{address}:{config.PORT}")
 
+    # Before anything else touches the folder: move in anything left in the old
+    # location, and clear away backups the power cut off halfway through.
+    tidied = maintenance.tidy_backup_dir()
+    if tidied["moved"]:
+        print(f"  Backups  : moved {len(tidied['moved'])} from "
+              f"{config.LEGACY_BACKUP_DIR}")
+    if tidied["swept"]:
+        print(f"  Backups  : discarded {len(tidied['swept'])} unfinished "
+              f"({', '.join(tidied['swept'])})")
+
     schedule = None
     if config.BACKUP_EVERY_HOURS:
         print(f"  Backups  : every {config.BACKUP_EVERY_HOURS}h, "

@@ -16,6 +16,13 @@
 database/*
 !database/.gitkeep
 
+# --- backups ---------------------------------------------------------------
+# Zipped copies of the whole database: the same customer records, and about a
+# third of 1.2 GB each. The folder sits at the top of the project so it is easy
+# to find, which makes ignoring it more important rather than less.
+backups/*
+!backups/.gitkeep
+
 # --- legacy production data ------------------------------------------------
 # Only the FoxPro *source* is committed; its data files never are.
 legacy/*.DBF
