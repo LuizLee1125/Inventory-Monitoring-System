@@ -258,7 +258,7 @@ async function showShell() {
   if (started) resolve();
 
   if (session.user.must_change_password) {
-    changePassword(true);
+    forcePasswordChange();
   }
 }
 
@@ -285,23 +285,29 @@ async function loadSession() {
   }
 }
 
-export function changePassword(forced = false) {
+/**
+ * The one case that still needs a modal: an account carried over from the DOS
+ * system, stopped at the door until it has a password of its own. Changing a
+ * password by choice is a section of the settings screen.
+ *
+ * There is no Cancel. The account cannot be used until this is done.
+ */
+function forcePasswordChange() {
   const current = input('current_password', { type: 'password', required: true });
   const next = input('new_password', { type: 'password', required: true, minlength: 8 });
   const again = input('confirm', { type: 'password', required: true });
 
   modal({
-    title: forced ? 'Choose a new password' : 'Change password',
+    title: 'Choose a new password',
     body: el('div', {}, [
-      forced ? el('p', { class: 'hint' },
+      el('p', { class: 'hint' },
         ['This account was carried over from the DOS system, where passwords were '
-         + 'stored in plain text. Set a new one to continue.']) : null,
+         + 'stored in plain text. Set a new one to continue.']),
       field('Current password', current),
       field('New password (8 characters or more)', next),
       field('Repeat new password', again),
     ]),
     actions: [
-      forced ? null : { label: 'Cancel' },
       {
         label: 'Save',
         kind: 'primary',
@@ -317,7 +323,7 @@ export function changePassword(forced = false) {
           toast('Password changed.', 'success');
         },
       },
-    ].filter(Boolean),
+    ],
   });
 }
 
@@ -359,10 +365,6 @@ function wireChrome() {
 
   $('#btn-logout').addEventListener('click', signOut);
 
-  $('#btn-password').addEventListener('click', () => {
-    closeAccountMenu();
-    changePassword(false);
-  });
   // An anchor, so the router handles it; the menu just has to get out of the way.
   $('#btn-settings').addEventListener('click', closeAccountMenu);
   $('#menu-toggle').addEventListener('click', () => $('#sidebar').classList.toggle('open'));

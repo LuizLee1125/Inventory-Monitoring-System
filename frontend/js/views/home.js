@@ -12,10 +12,9 @@
 
 import { api } from '../api.js';
 import { count, date, el, money, monthsAgo, qty, toast, today } from '../ui.js';
-import { can, changePassword, session, setTitle, signOut } from '../app.js';
+import { can, session, setTitle, signOut } from '../app.js';
 
 const ACTIONS = {
-  password: () => changePassword(false),
   signout: () => signOut(),
 };
 
@@ -50,7 +49,9 @@ const SHORTCUTS = [
   { key: '6', label: 'Expiration Inquiry', path: '/reports/expiring', permission: 'report:read' },
   { key: '7', label: 'Depleted Stocks', path: '/reports/depleted', permission: 'report:read' },
   { key: '8', label: 'Archive Inquiry', path: '/archive/summary', permission: 'report:read' },
-  { key: '9', label: 'Change Password', action: 'password', permission: 'report:read' },
+  // The DOS key still works; it now opens the settings screen, where changing
+  // your password lives along with the rest of the account.
+  { key: '9', label: 'Change Password', path: '/settings', permission: 'report:read' },
 ];
 
 // A role whose DOS counterpart had its own small menu keeps that menu's keys,

@@ -272,6 +272,105 @@ account. That is a choice, not an oversight — it is a property of the screen
 someone is sitting at, and the same clerk on the warehouse terminal and the
 office PC will want different answers.
 
+## Form controls
+
+Fields are **filled wells**, not outlined boxes: `--field-bg` with a hairline
+`--field-border` at `--radius-field` (12px), and a ring on focus. Before this
+they were `--surface` inside a 1px `--border-strong` at 6px, which drew a grid
+of hard rectangles across every form and was most of what made these screens
+look unrelated to the rest of the family. Buttons share `--radius-field` so a
+button and an input in one toolbar agree with each other.
+
+**The global search is a pill; in-page filters are wells.** They do different
+jobs and the shape says which before the placeholder is read. Both take the same
+fill and hairline, so they still belong to one set.
+
+### Never the `background` shorthand on anything with a background-image
+
+`background: var(--surface)` resets `background-repeat`, `-position` and `-size`
+along with the colour. The focus rule used to say exactly that, which wiped
+`no-repeat` off the select chevron and **tiled it across the control** the
+moment it was focused. Use `background-color`.
+
+### Dropdowns are drawn here, not by the operating system
+
+`select()` in `ui.js` returns a wrapper, not the `<select>` — but one that
+stands in for it completely: `.value` reads and writes through, `.options`,
+`.selectedIndex`, `.selectedOptions` and `.disabled` forward, and `change`
+bubbles out of the real control inside. So `readForm()` still finds it by name
+and every caller stayed as it was. **Anything a caller reaches for on a
+`<select>` belongs in that forwarding block** — `salesReport()` reads
+`.options[.selectedIndex].text`, and it was found as a TypeError rather than by
+reading the code first.
+
+A native popup is drawn by the operating system: square corners, its own font,
+no animation, nothing about it matching the interface. So only the popup is
+replaced; the real `<select>` is still inside the wrapper holding the value.
+
+Three things the panel gets right that are easy to lose:
+
+- **It lives on `<body>`, positioned `fixed` from the trigger's rectangle**, so
+  a scrolling modal body or a table's overflow container cannot clip it. The
+  cost is that it does not disappear when the router clears the screen beneath
+  it — hence `close()` on `hashchange`, and a `button.isConnected` check in
+  `place()`.
+- **Scrolling repositions it; it does not close.** Closing on any scroll meant a
+  scroll still settling from before the menu opened shut it the instant it
+  appeared. Only the trigger leaving the window closes it.
+- **Everything that marks the menu open happens before `place()`**, because
+  `place()` may close it again. Setting `aria-expanded` afterwards left the
+  button claiming to be open with nothing under it.
+
+The panel flips above its trigger when there is no room below, and swaps to the
+`pop-in-up` / `pop-out-down` pair so it still travels *towards* the control.
+Keyboard: arrows, Home/End, Enter, Escape, and type-ahead — the one thing a
+native select does that is easy to forget to reimplement.
+
+The magnifier in `.search` is a **mask**, not a background image, so `color`
+drives it and the focus state is a one-property change. It replaced a `⌕`
+character, which rendered at a different weight and size in every font that
+might be installed.
+
+## The settings screen
+
+Two columns of grouped rows at ≥1200px, one below it. The split is at 1200 and
+not 1024 because a label plus a 320px control needs about 34rem, and half of
+1024 is 29rem — the width at which the rows look cramped rather than roomy.
+
+The structure is `group()` and `row()` in `views/settings.js`, and the rule that
+makes it compact is that **the group's name sits outside its card**. A header
+bar inside every card costs a row of height per group and makes four groups read
+as four pages. `row(..., { stacked: true })` is there for a control too wide to
+sit opposite its label; nothing needs it today.
+
+The page takes the **full width** — no `max-width`. There is no reading-measure
+argument for one here: these are label/value rows, not prose, and a cap left a
+third of a wide monitor empty beside a page that had run out of room.
+
+Three things were tried and removed, and should not come back without a better
+reason than the one they had:
+
+- a sentence of introduction above the cards — the top bar already says
+  Settings and the group labels say what each card is;
+- a SURFACE / RAISED / ACCENT swatch strip under the theme picker — the
+  application behind the card is the preview, and it repaints the instant a
+  segment is pressed;
+- a "Remembered where / This device" row — true, but it is a footnote about the
+  setting above it, and it cost a row to say so. It is in the README instead.
+
+The avatar is the account's **initials**, in the top bar and again at 64px on
+this screen. There are no uploaded photographs in this system and none planned,
+so it is the avatar rather than a placeholder waiting for one; `initials()` is
+duplicated in `app.js` and `settings.js` because the two draw at different
+sizes and neither owns the other.
+
+**Changing a password happens here and nowhere else.** It used to be an item in
+the account menu as well, which meant two ways in and two things to keep in
+step. The DOS key `9` still works and now opens this screen. One modal survives:
+`forcePasswordChange()` in `app.js`, for an account carried over from the DOS
+system that cannot be used until it has a password of its own — it has no
+Cancel, which is the whole reason it is a modal and not a screen.
+
 ## Printing
 
 `window.print()` on a normal screen prints that screen; `@media print` in

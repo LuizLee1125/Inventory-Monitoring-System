@@ -179,14 +179,224 @@ export function input(name, attrs = {}) {
   return el('input', { name, ...attrs });
 }
 
+/**
+ * A dropdown.
+ *
+ * Returns a wrapper element, not the `<select>` — but one that behaves like the
+ * select for everything this application does with it: `.value` reads and
+ * writes through, and `change` bubbles out of the real control inside, so
+ * `node.addEventListener('change', …)` still works and `readForm()` still finds
+ * it by name. Callers did not have to change.
+ *
+ * The real `<select>` is still in there and still holds the value. What is
+ * replaced is only the *popup*: a native one is drawn by the operating system,
+ * which means square corners, its own font, and no animation — nothing about it
+ * can be made to match the rest of the interface. This draws the list instead.
+ */
 export function select(name, options, value) {
-  const node = el('select', { name });
+  const native = el('select', {
+    name,
+    class: 'cselect-native',
+    // The button below carries the interaction and the accessible name; the
+    // select is here to hold the value, and must not be a second tab stop.
+    tabindex: -1,
+    'aria-hidden': 'true',
+  });
   for (const option of options) {
     const [key, text] = Array.isArray(option) ? option : [option, option];
-    node.append(el('option', { value: key, selected: String(key) === String(value) },
+    native.append(el('option', { value: key, selected: String(key) === String(value) },
       [text]));
   }
-  return node;
+  return dropdown(native);
+}
+
+function dropdown(native) {
+  const label = el('span', { class: 'cselect-label' });
+  const button = el('button', {
+    type: 'button',
+    class: 'cselect-btn',
+    'aria-haspopup': 'listbox',
+    'aria-expanded': 'false',
+  }, [label, el('span', { class: 'cselect-caret', 'aria-hidden': 'true' })]);
+
+  const wrap = el('div', { class: 'cselect' }, [native, button]);
+
+  let menu = null;
+  let active = -1;
+  let typed = '';
+  let typedAt = 0;
+
+  const items = () => [...native.options];
+  const paint = () => { label.textContent = native.selectedOptions[0]?.textContent ?? ''; };
+
+  function highlight(index) {
+    if (!menu) return;
+    active = Math.max(0, Math.min(index, items().length - 1));
+    [...menu.children].forEach((node, i) => {
+      node.classList.toggle('on', i === active);
+      if (i === active) node.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function close({ focus = false } = {}) {
+    if (!menu) return;
+    const dying = menu;
+    menu = null;
+    button.setAttribute('aria-expanded', 'false');
+    // Kept in the document until the exit animation finishes; `animationend`
+    // may never fire under prefers-reduced-motion's 1ms, so a timer backs it up.
+    dying.classList.add('closing');
+    const remove = () => dying.remove();
+    dying.addEventListener('animationend', remove, { once: true });
+    setTimeout(remove, 300);
+    window.removeEventListener('scroll', place, true);
+    window.removeEventListener('resize', place);
+    window.removeEventListener('hashchange', onNavigate);
+    document.removeEventListener('mousedown', onOutside, true);
+    if (focus) button.focus();
+  }
+
+  /**
+   * Put the panel under its trigger — or above it, when there is no room
+   * below. Called again on scroll and resize rather than closing on either:
+   * a scroll still settling from before the menu opened would otherwise shut
+   * it the instant it appeared.
+   */
+  function place() {
+    if (!menu) return;
+
+    // The panel lives on <body> so nothing can clip it, which means it does not
+    // go away when the router clears the screen underneath it. Without this it
+    // is left floating over the next screen, anchored to a trigger that no
+    // longer exists.
+    if (!button.isConnected) { close(); return; }
+
+    const rect = button.getBoundingClientRect();
+
+    // Only when the trigger itself has left the window is closing right.
+    if (rect.bottom < 0 || rect.top > window.innerHeight) { close(); return; }
+
+    const height = menu.offsetHeight;
+    const above = rect.bottom + 6 + height > window.innerHeight - 8
+      && rect.top - height - 6 > 8;
+    menu.classList.toggle('above', above);
+    Object.assign(menu.style, {
+      left: `${rect.left}px`,
+      top: above ? `${rect.top - height - 6}px` : `${rect.bottom + 6}px`,
+      minWidth: `${rect.width}px`,
+    });
+  }
+
+  const onOutside = (event) => {
+    if (!menu?.contains(event.target) && !wrap.contains(event.target)) close();
+  };
+
+  // Leaving the screen closes the menu. `place()` catches the disconnected
+  // trigger too, but only when something scrolls or resizes — this is the
+  // signal that the screen changed.
+  const onNavigate = () => close();
+
+  function choose(index) {
+    const option = items()[index];
+    if (!option || option.disabled) return;
+    native.selectedIndex = index;
+    paint();
+    native.dispatchEvent(new Event('change', { bubbles: true }));
+    close({ focus: true });
+  }
+
+  function open() {
+    if (menu) return;
+    menu = el('div', { class: 'cselect-menu', role: 'listbox' },
+      items().map((option, index) => el('button', {
+        type: 'button',
+        class: 'cselect-option',
+        role: 'option',
+        'aria-selected': String(index === native.selectedIndex),
+        // mousedown, not click: the button would otherwise take focus first and
+        // the outside-click handler would close the menu under the pointer.
+        onMouseDown: (event) => { event.preventDefault(); choose(index); },
+        onMouseEnter: () => highlight(index),
+      }, [option.textContent])));
+
+    // Fixed, and placed from the trigger's rectangle, so the panel is never
+    // clipped by a scrolling modal body or a table's overflow container.
+    menu.style.position = 'fixed';
+    // Off-screen for the first frame: place() needs the rendered height to
+    // decide whether the panel goes below or above, and measuring it in view
+    // would show one frame in the wrong place.
+    menu.style.top = '-9999px';
+    document.body.append(menu);
+
+    // Everything that marks the menu open happens before place(), because
+    // place() may decide the trigger has scrolled out of view and close again.
+    // Setting aria-expanded afterwards left the button claiming to be open
+    // with nothing under it.
+    button.setAttribute('aria-expanded', 'true');
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    window.addEventListener('hashchange', onNavigate);
+    document.addEventListener('mousedown', onOutside, true);
+
+    place();
+    if (menu) highlight(native.selectedIndex);
+  }
+
+  button.addEventListener('click', () => (menu ? close() : open()));
+
+  button.addEventListener('keydown', (event) => {
+    const { key } = event;
+    if (key === 'Escape') { close({ focus: true }); return; }
+    if (key === 'Tab') { close(); return; }
+
+    if (!menu) {
+      if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Enter' || key === ' ') {
+        event.preventDefault();
+        open();
+      }
+      return;
+    }
+
+    if (key === 'ArrowDown') { event.preventDefault(); highlight(active + 1); }
+    else if (key === 'ArrowUp') { event.preventDefault(); highlight(active - 1); }
+    else if (key === 'Home') { event.preventDefault(); highlight(0); }
+    else if (key === 'End') { event.preventDefault(); highlight(items().length - 1); }
+    else if (key === 'Enter' || key === ' ') { event.preventDefault(); choose(active); }
+    else if (key.length === 1) {
+      // Type-ahead, the one thing a native select does that is easy to miss.
+      const now = Date.now();
+      typed = now - typedAt > 800 ? key : typed + key;
+      typedAt = now;
+      const found = items().findIndex((option) =>
+        option.textContent.toLowerCase().startsWith(typed.toLowerCase()));
+      if (found >= 0) highlight(found);
+    }
+  });
+
+  // Forwarding is the whole reason callers can stay as they were — including
+  // the ones that assign to `.value` from outside without dispatching an event,
+  // and `salesReport()`, which reads the chosen option's text through
+  // `.options[.selectedIndex]`. Anything a caller reaches for on a <select>
+  // belongs here; the alternative is discovering it as a TypeError.
+  Object.defineProperties(wrap, {
+    value: {
+      get: () => native.value,
+      set: (next) => { native.value = next; paint(); },
+    },
+    options: { get: () => native.options },
+    selectedOptions: { get: () => native.selectedOptions },
+    selectedIndex: {
+      get: () => native.selectedIndex,
+      set: (next) => { native.selectedIndex = next; paint(); },
+    },
+    disabled: {
+      get: () => native.disabled,
+      set: (next) => { native.disabled = next; button.disabled = next; },
+    },
+  });
+
+  paint();
+  return wrap;
 }
 
 export function readForm(scope) {

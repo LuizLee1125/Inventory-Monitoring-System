@@ -362,13 +362,14 @@ printing is now the browser's own dialog. Its slot carries Change Password inste
 ### Settings
 
 Every account has one, whatever its role: click the initials at the top right and choose
-**Settings**. Three sections:
+**Settings**. Four groups, in two columns:
 
-| Section | What is there |
+| Group | What is there |
 | --- | --- |
-| Account | User name, full name, role and the DOS menu it replaces, how many permissions the role grants, when the account was opened, when this sign-in began. All read-only — changing somebody's account is Users & Audit, which is where the permission for it lives. |
-| Password | Change your own, without going through the menu. Eight characters or more. You stay signed in on this device. |
-| Appearance | **Light**, **Dark**, or **System**, which follows whatever the PC is set to and keeps following it. |
+| Account | The account's initials as its picture, name and role, then user name, full name, the DOS menu the role replaces, how many permissions it grants, when the account was opened and when this sign-in began. Read-only — changing somebody's account is Users & Audit, which is where the permission for it lives. |
+| Security | Change your own password. Eight characters or more. You stay signed in on this device. **This is the only place it can be done** — it used to be in the account menu as well, which meant two ways in. The DOS key `9` still works and lands here. |
+| Appearance | **Light**, **Dark**, or **System**, which follows whatever the PC is set to and keeps following it. The choice is remembered in that browser on that PC, not on the account. |
+| System | Company, application, version, and how many roles are defined. |
 
 The appearance choice is remembered in that browser, on that PC — not on the account. The
 warehouse terminal under fluorescent light and the office PC by the window can want different

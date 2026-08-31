@@ -85,6 +85,23 @@
      focus style at all, so keyboard users lost the cursor outside inputs. */
   --ring: 0 0 0 3px rgb(37 99 235 / .3);
 
+  /* Fields. A filled well with a hairline, not an outlined box — the shape the
+     rest of the family uses. `--radius-field` is softer than the 6px controls
+     radius on purpose; it is what makes a form read as a set of wells. */
+  --field-bg: #f8fafc;
+  --field-border: #e2e8f0;
+  --radius-field: 12px;
+
+  /* The select chevron, inlined so it needs no network request and can be
+     recoloured per theme. Two copies rather than a CSS filter: a filter on a
+     background image would also tint the field behind it. */
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
+  --chevron-active: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
+
+  /* Used as masks, so they carry no colour of their own and need no dark twin. */
+  --magnifier: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='9' cy='9' r='6'/%3E%3Cpath d='M13.5 13.5 17.5 17.5'/%3E%3C/svg%3E");
+  --caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
+
   --sidebar-w: 236px;
   --topbar-h: 60px;
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
@@ -130,6 +147,10 @@
     --shadow-lg: 0 4px 16px -2px rgb(0 0 0 / .6), 0 0 0 1px rgb(255 255 255 / .06);
     --shadow-pop: 0 14px 36px -10px rgb(0 0 0 / .75), 0 0 0 1px rgb(255 255 255 / .07);
     --ring: 0 0 0 3px rgb(96 165 250 / .34);
+    --field-bg: #1c1c1c;
+    --field-border: #343434;
+    --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
+    --chevron-active: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2360a5fa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
 
     --scroll-thumb: rgb(229 229 229 / .18);
     --scroll-thumb-hover: rgb(229 229 229 / .34);
@@ -162,6 +183,10 @@
   --shadow-lg: 0 4px 16px -2px rgb(0 0 0 / .6), 0 0 0 1px rgb(255 255 255 / .06);
   --shadow-pop: 0 14px 36px -10px rgb(0 0 0 / .75), 0 0 0 1px rgb(255 255 255 / .07);
   --ring: 0 0 0 3px rgb(96 165 250 / .34);
+  --field-bg: #1c1c1c;
+  --field-border: #343434;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
+  --chevron-active: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2360a5fa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
   --scroll-thumb: rgb(229 229 229 / .18);
   --scroll-thumb-hover: rgb(229 229 229 / .34);
 }
@@ -457,13 +482,16 @@ a { color: var(--primary); }
   color: var(--text-faint);
   pointer-events: none;
 }
+/* The global search stays a pill while in-page filters are wells: they do
+   different jobs, and the shape says which is which before the placeholder is
+   read. Same fill and hairline as every other field, so it still belongs. */
 .omni input {
   width: 100%;
   height: 38px;
   padding: 0 var(--sp-4) 0 var(--sp-10);
-  border: 1px solid transparent;
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-full);
-  background: var(--surface-2);
+  background: var(--field-bg);
   font-size: var(--fs-md);
   transition: background-color var(--dur) var(--ease),
               border-color var(--dur) var(--ease),
@@ -491,7 +519,7 @@ a { color: var(--primary); }
   padding: var(--sp-1);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-pop);
   animation: pop-in var(--dur) var(--ease-out);
 }
@@ -577,7 +605,7 @@ a { color: var(--primary); }
   padding: var(--sp-1);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-pop);
   transform-origin: top right;
   animation: pop-in var(--dur) var(--ease-out);
@@ -1108,7 +1136,9 @@ table.grid td.wrap {
   gap: var(--sp-1);
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  /* Same radius as a field, so a button and an input sitting in one toolbar
+     agree with each other. */
+  border-radius: var(--radius-field);
   background: var(--surface);
   color: var(--text);
   font: inherit;
@@ -1144,14 +1174,24 @@ table.grid td.wrap {
 .btn.danger:hover { background: var(--danger-soft); }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--text-dim); }
 .btn.ghost:hover { background: var(--surface-2); color: var(--text); }
-.btn.sm { padding: var(--sp-1) var(--sp-2); font-size: var(--fs-xs); }
+.btn.sm { padding: var(--sp-1) var(--sp-2); font-size: var(--fs-xs); border-radius: var(--radius); }
 .btn.block { width: 100%; justify-content: center; padding: var(--sp-3); }
 
+/* Fields are filled and soft-cornered rather than outlined boxes: a recessed
+   well on the surface, a hairline instead of a hard border, and a ring on
+   focus. The old 1px --border-strong outline at 6px radius drew a grid of
+   rectangles across every form, which is most of what made the screens feel
+   like a different application from the one they are meant to match. */
+/* `background-color`, never the `background` shorthand, on anything that also
+   carries a background-image. The shorthand resets background-repeat,
+   -position and -size along with the colour: the focus rule below used to say
+   `background: var(--surface)`, which wiped `no-repeat` off the select chevron
+   and tiled it across the control the moment it was focused. */
 input, select, textarea {
   padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-field);
+  background-color: var(--field-bg);
   color: var(--text);
   font: inherit;
   font-size: var(--fs-sm);
@@ -1160,17 +1200,166 @@ input, select, textarea {
               box-shadow var(--dur-fast) var(--ease),
               background-color var(--dur-fast) var(--ease);
 }
-input:hover:not([readonly]), select:hover, textarea:hover { border-color: var(--text-dim); }
+input:hover:not([readonly]):not(:focus),
+select:hover:not(:focus),
+textarea:hover:not(:focus) { border-color: var(--border-strong); }
 /* A ring rather than a hard outline, matching the focus treatment everywhere
    else. The outline used to sit inside the border and thicken it by a pixel,
    which nudged the field's neighbours on focus. */
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--primary);
+  background-color: var(--surface);
   box-shadow: var(--ring);
 }
-input[readonly] { background: var(--surface-2); color: var(--text-dim); }
+input::placeholder, textarea::placeholder { color: var(--text-faint); }
+input[readonly] {
+  background-color: var(--surface-3);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
 input.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Any select still rendered natively — none today, but the rule is cheap and
+   stops one appearing bare if a view ever builds its own. */
+select {
+  appearance: none;
+  padding-right: var(--sp-8);
+  background-image: var(--chevron);
+  background-repeat: no-repeat;
+  background-position: right var(--sp-3) center;
+  background-size: 16px;
+  cursor: pointer;
+}
+select:focus { background-image: var(--chevron-active); }
+
+/* --------------------------------------------------------------- select -- */
+/* ui.js draws the list itself. A native popup is drawn by the operating
+   system: square corners, its own font, no animation, and nothing about it can
+   be made to match. The real <select> is still inside .cselect holding the
+   value — it is only the popup that is replaced. */
+
+.cselect { position: relative; display: inline-flex; min-width: 0; }
+/* In a toolbar the trigger sizes to its longest label, which is why it needs a
+   floor: "All items" and "At or below reorder point" are the same control, and
+   it must not resize as the choice changes. */
+.toolbar .cselect, .set-control .cselect { min-width: 168px; }
+.cselect-native {
+  /* Present for its value, invisible and out of the tab order. Not
+     `display:none`: a hidden form control is skipped by some form APIs. */
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cselect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-field);
+  background: var(--field-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease),
+              background-color var(--dur-fast) var(--ease),
+              box-shadow var(--dur-fast) var(--ease);
+}
+.cselect-btn:hover { border-color: var(--border-strong); }
+.cselect-btn:focus-visible,
+.cselect-btn[aria-expanded="true"] {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+.cselect-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One chevron, drawn as a mask so `color` turns it blue while the menu is
+   open — and so it can rotate, which a background-image on the control itself
+   could not do without rotating the control with it. */
+.cselect-caret {
+  flex: none;
+  width: 16px; height: 16px;
+  background: currentColor;
+  color: var(--text-faint);
+  -webkit-mask: var(--caret) center / contain no-repeat;
+  mask: var(--caret) center / contain no-repeat;
+  transition: transform var(--dur) var(--ease-out), color var(--dur-fast) var(--ease);
+}
+.cselect-btn[aria-expanded="true"] .cselect-caret {
+  transform: rotate(180deg);
+  color: var(--primary);
+}
+
+.cselect-menu {
+  z-index: 70;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  transform-origin: top center;
+  animation: pop-in var(--dur) var(--ease-out);
+}
+.cselect-menu.above { transform-origin: bottom center; animation-name: pop-in-up; }
+.cselect-menu.closing { animation: pop-out var(--dur-fast) var(--ease) forwards; }
+.cselect-menu.above.closing { animation-name: pop-out-down; }
+
+.cselect-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease);
+}
+.cselect-option.on { background: var(--surface-2); }
+.cselect-option[aria-selected="true"] {
+  color: var(--primary);
+  font-weight: var(--fw-semi);
+}
+/* The tick marks the current value; the highlight marks where the keyboard is.
+   They are different questions and need to be answerable at the same time. */
+.cselect-option[aria-selected="true"]::after {
+  content: "✓";
+  margin-left: auto;
+  padding-left: var(--sp-3);
+  font-weight: var(--fw-bold);
+}
+
+input[type="checkbox"], input[type="radio"] {
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+input[type="date"] { min-height: 34px; }
 
 .field {
   display: flex;
@@ -1185,7 +1374,7 @@ input.num { text-align: right; font-variant-numeric: tabular-nums; }
   text-transform: uppercase;
   color: var(--text-dim);
 }
-.field input, .field select, .field textarea { width: 100%; }
+.field input, .field select, .field textarea, .field .cselect { width: 100%; }
 
 /* A checkbox is a statement, not a labelled value: box first, sentence beside
    it, on one line and in sentence case rather than the field label's caps. */
@@ -1211,16 +1400,26 @@ input.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .form-grid .span2 { grid-column: span 2; }
 
+/* The in-page search, same well as every other field with the glyph set into
+   it. It used to be a "⌕" character sitting in the padding at a size chosen to
+   look right in one font — a magnifier drawn as a shape holds its weight
+   whatever is installed, and matches the one in the top bar. */
 .search { position: relative; flex: 1; min-width: 190px; max-width: 380px; }
 .search input { width: 100%; padding-left: var(--sp-8); }
 .search::before {
-  content: "⌕";
+  content: "";
   position: absolute;
   left: var(--sp-3); top: 50%;
-  transform: translateY(-50%);
+  width: 15px; height: 15px;
+  margin-top: -7.5px;
+  background: currentColor;
   color: var(--text-faint);
-  font-size: var(--fs-lg);
+  pointer-events: none;
   transition: color var(--dur-fast) var(--ease);
+  /* Masked rather than a background image, so `color` above drives it and the
+     focus state is a one-property change instead of a second data URI. */
+  -webkit-mask: var(--magnifier) center / contain no-repeat;
+  mask: var(--magnifier) center / contain no-repeat;
 }
 .search:focus-within::before { color: var(--primary); }
 
@@ -1337,10 +1536,29 @@ input.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 
 /* Anchored to its trigger by transform-origin at the call site, so a dropdown
-   appears to come out of the control that opened it. */
+   appears to come out of the control that opened it — and goes back into it.
+   The exit is faster than the entrance: opening is the interesting event,
+   closing is already decided and should get out of the way. */
 @keyframes pop-in {
   from { opacity: 0; transform: translateY(-6px) scale(.97); }
   to { opacity: 1; transform: none; }
+}
+
+@keyframes pop-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-4px) scale(.98); }
+}
+
+/* The pair used when a menu has flipped above its trigger, so it still travels
+   towards the control rather than away from it. */
+@keyframes pop-in-up {
+  from { opacity: 0; transform: translateY(6px) scale(.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes pop-out-down {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(4px) scale(.98); }
 }
 
 @keyframes rise-in {
@@ -1380,7 +1598,13 @@ input.num { text-align: right; font-variant-numeric: tabular-nums; }
   border-bottom: 1px solid var(--border);
 }
 .lines td { padding: var(--sp-1); border-bottom: 1px solid var(--border); }
-.lines input { width: 100%; padding: var(--sp-1) var(--sp-2); }
+/* Cells in a grid of them: the field radius reads as a row of lozenges at this
+   size, so the line editor keeps the tighter control radius. */
+.lines input {
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+}
 .lines .num input { text-align: right; }
 .lines td.total {
   text-align: right;
@@ -1416,14 +1640,16 @@ input.num { text-align: right; font-variant-numeric: tabular-nums; }
   max-height: 260px;
   overflow-y: auto;
   min-width: 320px;
+  padding: var(--sp-1);
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-pop);
   animation: pop-in var(--dur-fast) var(--ease-out);
 }
 .suggest div {
   padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--fs-sm);
   display: flex;
@@ -1618,24 +1844,64 @@ input.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 
 /* ------------------------------------------------------------- settings -- */
-/* A label on the left, its control on the right, one per row. The label column
-   is fixed so every control in a card starts at the same x — the thing that
-   makes a settings screen look composed rather than assembled. Below the
-   breakpoint the control drops to its own line, where it has the full width. */
+/* Two columns of grouped rows, on the shape the family uses: the group's name
+   sits *outside* its card, so the card holds nothing but controls. That is what
+   keeps the page compact — a header bar inside every card costs a row of
+   height per group and makes six groups read as six pages.
+   The split is at 1200px, not 1024: a label plus a 320px control needs about
+   34rem, and half of 1024 is 29rem, which is exactly the width that makes rows
+   look cramped rather than roomy. */
 
-.settings { max-width: 860px; }
+/* Full width. There is no reading-measure argument for a cap here — these are
+   label/value rows, not prose, and a 1360px cap on a 1900px monitor left a
+   third of the screen empty next to a page that had run out of room. */
+.settings-page { width: 100%; }
 
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-6);
+  align-items: start;
+}
+@media (min-width: 1200px) {
+  .settings-grid { grid-template-columns: 1fr 1fr; }
+}
+
+.set-col { display: flex; flex-direction: column; gap: var(--sp-6); }
+
+.set-group > h3 {
+  margin: 0 0 var(--sp-2) var(--sp-1);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.set-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 0 var(--sp-5);
+}
+
+/* Rows separate with hairlines rather than card gaps, so a group of six reads
+   as one block instead of six. */
 .set-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: var(--sp-3) var(--sp-5);
-  padding: var(--sp-4);
+  padding: var(--sp-4) 0;
   border-bottom: 1px solid var(--border);
 }
 .set-row:last-child { border-bottom: 0; }
+/* For controls too wide to sit opposite their label — the appearance picker. */
+.set-row.stacked { display: block; }
+.set-row.stacked .set-control { margin-top: var(--sp-3); justify-content: flex-start; }
 
-.set-label { flex: 1 1 220px; min-width: 0; }
+.set-label { min-width: 0; }
 .set-label strong {
   display: block;
   font-size: var(--fs-md);
@@ -1649,8 +1915,67 @@ input.num { text-align: right; font-variant-numeric: tabular-nums; }
   color: var(--text-dim);
   line-height: var(--lh-snug);
 }
-.set-control { flex: 0 1 320px; display: flex; justify-content: flex-end; }
-.set-control.grow { flex: 1 1 320px; }
+.set-control { display: flex; justify-content: flex-end; min-width: 0; max-width: 100%; }
+
+/* Actions pinned below the rows, inside the card, behind a divider. */
+.set-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  padding: var(--sp-4) 0;
+  border-top: 1px solid var(--border);
+}
+
+/* The identity bar at the top of the Account group. There are no uploaded
+   photographs in this system and there is no plan for any — the initials block
+   is the avatar, not a placeholder waiting for one, so it is drawn to be looked
+   at rather than to be replaced. */
+.set-profile {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-5) 0;
+  border-bottom: 1px solid var(--border);
+}
+.set-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 64px; height: 64px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--on-primary-soft);
+  box-shadow: 0 0 0 3px var(--surface-2);
+  font-family: var(--display);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: .02em;
+  user-select: none;
+}
+.set-who { min-width: 0; }
+.set-who .name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.set-who h4 {
+  font-family: var(--display);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: -.02em;
+}
+.set-who p {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.set-who .mono { font-family: var(--mono); font-size: var(--fs-xs); }
+
+/* A password form is three fields nobody fills in side by side. */
+.set-stack { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4) 0; }
+.set-stack .field { margin-bottom: 0; }
 
 /* A read-only value reads as data, not as a disabled input: an input box the
    user cannot type into invites clicking at it until they give up. */
@@ -1699,31 +2024,6 @@ input.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .segment .ico { font-size: var(--fs-lg); line-height: 1; }
 
-/* The two swatches are the honest preview: whatever the tokens are set to is
-   what these show, because they are painted from the tokens. */
-.theme-preview {
-  display: flex;
-  gap: var(--sp-3);
-  margin-top: var(--sp-3);
-}
-.theme-chip {
-  flex: 1;
-  padding: var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: var(--fs-2xs);
-  font-weight: var(--fw-semi);
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-.theme-chip .bar {
-  display: block;
-  height: 6px;
-  margin-top: var(--sp-2);
-  border-radius: var(--radius-full);
-  background: var(--primary);
-}
-.theme-chip .bar.dim { margin-top: var(--sp-1); width: 60%; background: var(--border-strong); }
 
 /* ----------------------------------------------------------- responsive -- */
 

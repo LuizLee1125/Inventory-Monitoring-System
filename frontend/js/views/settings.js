@@ -1,42 +1,81 @@
 // Settings: the account, its password, and how the application looks.
 //
-// Reached from the avatar in the top right. Everything here is about *this*
+// Reached from the initials in the top right. Everything here is about *this*
 // signed-in person — changing somebody else's account is Users & Audit, which
 // is where the permission for it lives.
+//
+// Two columns of grouped rows: the group's name sits outside its card, so the
+// card holds nothing but controls. Left is the account and its password, right
+// is appearance and what this installation is.
 
 import { api } from '../api.js';
-import { card, dateTime, el, field, input, reportError, toast } from '../ui.js';
+import { dateTime, el, field, input, reportError, toast } from '../ui.js';
 import { page, session, setTitle } from '../app.js';
 import { THEMES, currentTheme, effectiveTheme, setTheme } from '../theme.js';
 
-/** One labelled row: what it is on the left, the control on the right. */
-function row(label, hint, control, { grow = false } = {}) {
-  return el('div', { class: 'set-row' }, [
+/* --------------------------------------------------------------- pieces -- */
+
+/** A titled group: label outside, card of rows inside, optional footer. */
+function group(label, rows, foot = null) {
+  return el('section', { class: 'set-group' }, [
+    el('h3', { text: label }),
+    el('div', { class: 'set-card' }, [
+      ...rows.filter(Boolean),
+      foot ? el('div', { class: 'set-foot' }, [foot]) : null,
+    ]),
+  ]);
+}
+
+/** One label/control pair. `stacked` puts the control on its own line. */
+function row(label, hint, control, { stacked = false } = {}) {
+  return el('div', { class: `set-row${stacked ? ' stacked' : ''}` }, [
     el('div', { class: 'set-label' }, [
       el('strong', { text: label }),
       hint ? el('span', { text: hint }) : null,
     ]),
-    el('div', { class: `set-control${grow ? ' grow' : ''}` }, [control]),
+    el('div', { class: 'set-control' }, [control]),
   ]);
 }
 
+/* A read-only value reads as data, not as a disabled input: an input box the
+   user cannot type into invites clicking at it until they give up. */
 const value = (text, extra = '') =>
   el('div', { class: `set-value ${extra}`.trim(), text: text || '—' });
 
+/** Initials, the same rule the top-bar avatar uses. */
+function initials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '··';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 /* ------------------------------------------------------------- account -- */
 
-function accountCard(me) {
-  const roleLabel = session.meta?.roles?.[me.role]?.label || me.role;
-  const legacy = session.meta?.roles?.[me.role]?.legacy;
+function accountGroup(me) {
+  const role = session.meta?.roles?.[me.role];
+  const who = me.full_name || me.username;
 
-  return card('Account', el('div', {}, [
-    row('User name', 'How you sign in. It cannot be changed here.',
-      value(me.username, 'mono')),
+  // No photographs anywhere in this system, and no plan for any: the initials
+  // block is the avatar rather than a placeholder waiting to be replaced.
+  const profile = el('div', { class: 'set-profile' }, [
+    el('div', { class: 'set-avatar', 'aria-hidden': 'true', text: initials(who) }),
+    el('div', { class: 'set-who' }, [
+      el('div', { class: 'name' }, [
+        el('h4', { text: who }),
+        el('span', { class: 'tag info', text: role?.label || me.role }),
+      ]),
+      el('p', { class: 'mono', text: me.username }),
+    ]),
+  ]);
+
+  return group('Account', [
+    profile,
     row('Full name', 'Shown on the documents you raise.', value(me.full_name)),
-    row('Role', legacy ? `Replaces the DOS menu ${legacy}.` : 'What this account may do.',
-      el('span', { class: 'tag info', text: roleLabel })),
-    row('Permissions', 'Granted by the role, not set per account.',
-      value(`${(me.permissions || []).length} granted`, 'dim')),
+    row('Role', role?.legacy && role.legacy !== '-'
+      ? `Replaces the DOS menu ${role.legacy}.`
+      : 'What this account may do.',
+    value(`${(me.permissions || []).length} permissions`, 'dim')),
     me.legacy_access_code
       ? row('Legacy access code', 'Carried over from the DOS PASSFYL record.',
         value(me.legacy_access_code, 'mono dim'))
@@ -44,28 +83,33 @@ function accountCard(me) {
     row('Account opened', '', value(dateTime(me.created_at), 'dim')),
     row('This sign-in', 'When the session you are using began.',
       value(dateTime(me.last_login), 'dim')),
-  ]), [], { flush: true });
+  ]);
 }
 
 /* ------------------------------------------------------------ password -- */
 
-function passwordCard() {
-  const current = input('current_password', { type: 'password', autocomplete: 'current-password' });
-  const next = input('new_password', { type: 'password', minlength: 8, autocomplete: 'new-password' });
+function passwordGroup() {
+  const current = input('current_password',
+    { type: 'password', autocomplete: 'current-password' });
+  const next = input('new_password',
+    { type: 'password', minlength: 8, autocomplete: 'new-password' });
   const again = input('confirm', { type: 'password', autocomplete: 'new-password' });
 
-  const save = el('button', { class: 'btn primary', text: 'Change password' });
+  const save = el('button', { class: 'btn primary', type: 'submit', text: 'Change password' });
 
-  const form = el('form', { class: 'card-body' }, [
-    el('p', { class: 'hint', style: 'margin-top:0' },
-      ['Eight characters or more. You stay signed in on this device; other '
-       + 'devices keep their sessions until they expire.']),
-    el('div', { class: 'form-grid' }, [
-      field('Current password', current),
-      field('New password', next),
-      field('Repeat new password', again),
+  const form = el('form', { class: 'set-group' }, [
+    el('h3', { text: 'Security' }),
+    el('div', { class: 'set-card' }, [
+      el('div', { class: 'set-stack' }, [
+        el('p', { class: 'hint', style: 'margin:0' },
+          ['Eight characters or more. You stay signed in on this device; other '
+           + 'devices keep their sessions until they expire.']),
+        field('Current password', current),
+        field('New password', next),
+        field('Repeat new password', again),
+      ]),
+      el('div', { class: 'set-foot' }, [save]),
     ]),
-    el('div', { class: 'toolbar', style: 'margin:0' }, [el('span', { class: 'spacer' }), save]),
   ]);
 
   form.addEventListener('submit', async (event) => {
@@ -90,24 +134,28 @@ function passwordCard() {
     }
   });
 
-  const node = el('div', { class: 'card' }, [
-    el('div', { class: 'card-head' }, [el('h3', { text: 'Password' })]),
-    form,
-  ]);
-  return node;
+  return form;
 }
 
 /* ---------------------------------------------------------- appearance -- */
 
 const THEME_ICON = { light: '☀', dark: '☾', system: '🖥' };
 
-function appearanceCard() {
+function appearanceGroup() {
   const buttons = new Map();
+  const describe = () => (currentTheme() === 'system'
+    ? `Following this device, which is currently ${effectiveTheme()}.`
+    : `Always ${currentTheme()}, whatever this device is set to.`);
+  const resolved = el('span', { text: describe() });
+  const label = el('div', { class: 'set-label' }, [
+    el('strong', { text: 'Theme' }),
+    el('span', {}, [resolved]),
+  ]);
 
   const pick = (mode) => {
     setTheme(mode);
-    for (const [value_, button] of buttons) {
-      button.setAttribute('aria-pressed', String(value_ === mode));
+    for (const [name, button] of buttons) {
+      button.setAttribute('aria-pressed', String(name === mode));
     }
     resolved.textContent = describe();
   };
@@ -129,42 +177,32 @@ function appearanceCard() {
     return button;
   }));
 
-  const describe = () => (currentTheme() === 'system'
-    ? `Following this device, which is currently ${effectiveTheme()}.`
-    : `Always ${currentTheme()}, whatever this device is set to.`);
-
-  const resolved = el('span', { text: describe() });
-
-  // Painted from the same tokens the rest of the application uses, so it can
-  // never claim a colour the interface is not actually showing.
-  const preview = el('div', { class: 'theme-preview' }, [
-    el('div', { class: 'theme-chip' }, [
-      'Surface',
-      el('span', { class: 'bar' }),
-      el('span', { class: 'bar dim' }),
-    ]),
-    el('div', { class: 'theme-chip', style: 'background:var(--surface-2)' }, [
-      'Raised',
-      el('span', { class: 'bar' }),
-      el('span', { class: 'bar dim' }),
-    ]),
-    el('div', { class: 'theme-chip', style: 'background:var(--primary-soft);color:var(--on-primary-soft)' }, [
-      'Accent',
-      el('span', { class: 'bar' }),
-      el('span', { class: 'bar dim' }),
+  // The swatch strip that used to sit under this is gone: the application
+  // behind the card is the preview, and it repaints the moment a segment is
+  // pressed. Three chips saying SURFACE / RAISED / ACCENT showed the same
+  // colours a second time and cost the card most of its height.
+  return el('section', { class: 'set-group' }, [
+    el('h3', { text: 'Appearance' }),
+    el('div', { class: 'set-card' }, [
+      el('div', { class: 'set-row' }, [
+        label,
+        el('div', { class: 'set-control' }, [segmented]),
+      ]),
     ]),
   ]);
+}
 
-  return card('Appearance', el('div', {}, [
-    el('div', { class: 'set-row' }, [
-      el('div', { class: 'set-label' }, [
-        el('strong', { text: 'Theme' }),
-        el('span', {}, [resolved]),
-      ]),
-      el('div', { class: 'set-control' }, [segmented]),
-    ]),
-    el('div', { class: 'card-body', style: 'padding-top:0' }, [preview]),
-  ]), [], { flush: true });
+/* -------------------------------------------------------------- system -- */
+
+function systemGroup() {
+  const meta = session.meta || {};
+  return group('System', [
+    row('Company', 'Set with IMS_COMPANY on the server.', value(meta.company)),
+    row('Application', '', value(meta.app)),
+    row('Version', '', value(meta.version ? `v${meta.version}` : '', 'mono dim')),
+    row('Roles defined', 'Carried over from the DOS access menus.',
+      value(`${Object.keys(meta.roles || {}).length}`, 'dim')),
+  ]);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -177,19 +215,18 @@ export async function render(container) {
   const me = await api.get('/me');
   session.user = { ...session.user, ...me };
 
-  container.classList.add('settings');
+  // No standing header: the top bar already says Settings, and the group
+  // labels say what each card is. A sentence above them restated both.
+  container.classList.add('settings-page');
   container.append(
-    el('p', { class: 'lede' },
-      ['Your account, and how this application looks on this device. '
-       + 'The appearance setting is remembered in this browser only — signing '
-       + 'in elsewhere starts from the system setting again.']),
-    accountCard(me),
-    passwordCard(),
-    appearanceCard(),
+    el('div', { class: 'settings-grid' }, [
+      el('div', { class: 'set-col' }, [accountGroup(me), passwordGroup()]),
+      el('div', { class: 'set-col' }, [appearanceGroup(), systemGroup()]),
+    ]),
   );
 }
 
 /** The router clears the page between screens but not its classes. */
 export function leave() {
-  page().classList.remove('settings');
+  page().classList.remove('settings-page');
 }
