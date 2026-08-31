@@ -101,6 +101,10 @@
   /* Used as masks, so they carry no colour of their own and need no dark twin. */
   --magnifier: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='9' cy='9' r='6'/%3E%3Cpath d='M13.5 13.5 17.5 17.5'/%3E%3C/svg%3E");
   --caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7.5 5 5 5-5'/%3E%3C/svg%3E");
+  --icon-user: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10' cy='6.5' r='3.3'/%3E%3Cpath d='M3.8 17c0-3.1 2.8-5.2 6.2-5.2s6.2 2.1 6.2 5.2'/%3E%3C/svg%3E");
+  --icon-lock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='8.6' width='12' height='8.4' rx='2'/%3E%3Cpath d='M6.9 8.6V6.2a3.1 3.1 0 0 1 6.2 0v2.4'/%3E%3C/svg%3E");
+  --icon-eye: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.8 10S4.7 4.6 10 4.6 18.2 10 18.2 10 15.3 15.4 10 15.4 1.8 10 1.8 10Z'/%3E%3Ccircle cx='10' cy='10' r='2.6'/%3E%3C/svg%3E");
+  --icon-eye-off: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.3 5.1A7.9 7.9 0 0 1 10 4.6c5.3 0 8.2 5.4 8.2 5.4a15 15 0 0 1-2.6 3.3M4.4 6.7A15 15 0 0 0 1.8 10S4.7 15.4 10 15.4c1 0 1.9-.2 2.7-.5'/%3E%3Cpath d='M8.2 8.2a2.6 2.6 0 0 0 3.6 3.6'/%3E%3Cpath d='m2.7 2.7 14.6 14.6'/%3E%3C/svg%3E");
 
   --sidebar-w: 236px;
   --topbar-h: 60px;
@@ -270,38 +274,116 @@ a { color: var(--primary); }
 
 /* ------------------------------------------------------------- sign in -- */
 
-.login {
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-  padding: 24px;
+/* Two panels: the name of the place on the left, the way in on the right.
+   A single centred card said nothing about what the system is — this is the
+   first screen anyone sees, and the office has had the same name over the door
+   since 1999. */
+.login { display: flex; min-height: 100vh; }
+
+/* The brand side keeps its own deep-blue palette in both themes. It is a
+   printed cover, not a surface of the application, and a "dark mode" version of
+   it would only make it agree with less. */
+.login-brand-panel {
+  position: relative;
+  display: none;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 46%;
+  flex: none;
+  padding: var(--sp-10) var(--sp-8);
+  overflow: hidden;
   background:
-    radial-gradient(1200px 500px at 50% -10%, var(--primary-soft), transparent 70%),
-    var(--bg);
+    linear-gradient(165deg, #1e40af 0%, #1a3a8f 45%, #0f2557 100%);
+  color: #fff;
+}
+@media (min-width: 1000px) { .login-brand-panel { display: flex; } }
+
+/* Ledger ruling, at the opacity of a watermark. The DOS system drew its screens
+   on a character grid; this is the same idea at the size of a page, and it
+   keeps the panel from being a flat rectangle of blue without putting a
+   photograph there that the business does not have. */
+.login-brand-panel::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background-image:
+    linear-gradient(rgb(255 255 255 / .06) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / .04) 1px, transparent 1px);
+  background-size: 100% 34px, 46px 100%;
+  mask: radial-gradient(120% 90% at 20% 0%, #000 20%, transparent 78%);
+  -webkit-mask: radial-gradient(120% 90% at 20% 0%, #000 20%, transparent 78%);
+  pointer-events: none;
+}
+.login-brand-panel > * { position: relative; }
+
+.login-org {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: rgb(255 255 255 / .85);
+}
+.login-headline {
+  font-family: var(--display);
+  /* Sized to the panel rather than to a step on the type scale: it is display
+     lettering on a cover, and it has a whole column to fill at any width. */
+  font-size: clamp(2.75rem, 4.6vw, 4.5rem);
+  font-weight: var(--fw-bold);
+  line-height: .95;
+  letter-spacing: -.035em;
+  text-shadow: 0 2px 14px rgb(6 21 45 / .4);
+}
+.login-since {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / .45);
 }
 
-.login-card {
-  width: 100%;
-  max-width: 380px;
+.login-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: var(--sp-8) var(--sp-6) var(--sp-6);
+}
+.login-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: none;
+  padding: var(--sp-8) var(--sp-8) 0;
+}
+.login-wordmark {
+  font-family: var(--display);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: -.02em;
+}
+
+/* The form is centred in whatever height is left between header and footer,
+   and holds the column's own margins rather than floating in the middle. */
+.login-body {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  padding: var(--sp-6) var(--sp-8);
+}
+.login-form {
+  width: 100%;
+  max-width: 360px;
+  margin-inline: auto;
   animation: rise-in var(--dur-slow) var(--ease-out);
 }
-
-.login-brand {
-  display: flex;
-  gap: var(--sp-3);
-  align-items: center;
-  margin-bottom: var(--sp-6);
+.login-form h2 {
+  font-size: var(--fs-3xl);
+  letter-spacing: -.035em;
 }
-.login-brand h1 { font-size: var(--fs-xl); }
-.login-brand p {
-  margin: var(--sp-1) 0 0;
+.login-lede {
+  margin: var(--sp-2) 0 var(--sp-6);
   color: var(--text-dim);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
 }
 
 .mark {
@@ -318,20 +400,129 @@ a { color: var(--primary); }
 }
 
 .login-error {
-  margin: 0 0 var(--sp-3);
-  padding: var(--sp-2) var(--sp-3);
-  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius);
   background: var(--danger-soft);
   color: var(--danger);
   font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
   animation: shake var(--dur-slow) var(--ease);
+}
+.login-error::before {
+  content: "!";
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 17px; height: 17px;
+  margin-top: 1px;
+  border-radius: var(--radius-full);
+  background: var(--danger);
+  color: #fff;
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-bold);
+}
+
+.login-field { display: block; margin-bottom: var(--sp-4); }
+.login-field > span:first-child {
+  display: block;
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+  color: var(--text-dim);
+}
+
+/* The icon is positioned against the input, not against the label and input
+   together, or it centres on the pair and floats above the box. */
+.login-input { position: relative; display: block; }
+.login-input input {
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-10);
+  font-size: var(--fs-md);
+}
+.login-input .ico {
+  position: absolute;
+  left: var(--sp-4); top: 50%;
+  width: 17px; height: 17px;
+  margin-top: -8.5px;
+  background: currentColor;
+  color: var(--text-faint);
+  pointer-events: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+.login-input .ico.user { -webkit-mask: var(--icon-user) center / contain no-repeat;
+                         mask: var(--icon-user) center / contain no-repeat; }
+.login-input .ico.lock { -webkit-mask: var(--icon-lock) center / contain no-repeat;
+                         mask: var(--icon-lock) center / contain no-repeat; }
+.login-input:focus-within .ico { color: var(--primary); }
+
+.login-input input[type="password"], .login-input input[name="password"] {
+  padding-right: var(--sp-10);
+}
+.login-reveal {
+  position: absolute;
+  right: var(--sp-2); top: 50%;
+  width: 32px; height: 32px;
+  margin-top: -16px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.login-reveal::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  background: currentColor;
+  color: var(--text-faint);
+  -webkit-mask: var(--icon-eye) center / contain no-repeat;
+  mask: var(--icon-eye) center / contain no-repeat;
+}
+.login-reveal:hover { background: var(--surface-2); }
+.login-reveal:hover::before, .login-reveal[aria-pressed="true"]::before { color: var(--primary); }
+.login-reveal[aria-pressed="true"]::before {
+  -webkit-mask-image: var(--icon-eye-off);
+  mask-image: var(--icon-eye-off);
+}
+
+/* Every user name in this system is upper case, carried over from the DOS
+   access file, so people hold Caps Lock down to type them — and then type their
+   password with it still on. This is the whole reason the failed sign-in that
+   follows would otherwise be a mystery. */
+.login-caps {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: calc(var(--sp-3) * -1) 0 var(--sp-4);
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  animation: fade-in var(--dur) var(--ease);
 }
 
 .login-foot {
-  margin: var(--sp-4) 0 0;
-  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  padding: 0 var(--sp-8) var(--sp-8);
   color: var(--text-faint);
   font-size: var(--fs-2xs);
+}
+.login-foot #login-version { font-family: var(--mono); }
+
+@media (max-width: 600px) {
+  .login-head { padding: var(--sp-6) var(--sp-5) 0; }
+  .login-body { padding: var(--sp-5); }
+  .login-foot { padding: 0 var(--sp-5) var(--sp-5); }
+  .login-form h2 { font-size: var(--fs-2xl); }
 }
 
 /* --------------------------------------------------------------- shell -- */

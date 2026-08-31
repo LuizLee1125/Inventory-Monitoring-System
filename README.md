@@ -122,6 +122,10 @@ nobody ever had to think about it, and every migrated password is stored upper-c
 has not yet chosen a new password will therefore also accept the lower-case form. That concession
 disappears the moment the user sets their own password.
 
+Because user names are upper-case, staff hold Caps Lock down to type one — and then type their
+password with it still on. The sign-in screen says so, under the password box, rather than leaving
+the rejection that follows unexplained. The eye at the end of the box shows what was typed.
+
 If a member of staff is locked out, sign in as an administrator and use **Users & Audit → Reset
 password**.
 

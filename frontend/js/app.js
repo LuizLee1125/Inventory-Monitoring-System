@@ -235,7 +235,15 @@ function showLogin(message = '') {
   const error = $('#login-error');
   error.hidden = !message;
   error.textContent = message;
-  $('#login-form').username.focus();
+
+  // A password left revealed must not still be on screen for whoever signs in
+  // next, and the caps warning belongs to the attempt that raised it.
+  const form = $('#login-form');
+  form.password.type = 'password';
+  $('#login-reveal').setAttribute('aria-pressed', 'false');
+  $('#login-reveal').setAttribute('aria-label', 'Show password');
+  $('#login-caps').hidden = true;
+  form.username.focus();
 }
 
 async function showShell() {
@@ -276,6 +284,8 @@ function roleLabel() {
 async function loadSession() {
   session.meta = await api.get('/meta');
   $('#login-company').textContent = session.meta.company;
+  $('#login-org').textContent = session.meta.company;
+  $('#login-version').textContent = `v${session.meta.version}`;
   try {
     session.user = await api.get('/me');
     return true;
@@ -344,7 +354,37 @@ function closeAccountMenu() {
   }
 }
 
+function wireLogin() {
+  const form = $('#login-form');
+  const password = form.password;
+  const reveal = $('#login-reveal');
+  const caps = $('#login-caps');
+
+  reveal.addEventListener('click', () => {
+    const showing = password.type === 'text';
+    password.type = showing ? 'password' : 'text';
+    reveal.setAttribute('aria-pressed', String(!showing));
+    reveal.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+    password.focus();
+  });
+
+  // Every user name here is upper case, carried over from the DOS access file,
+  // so people hold Caps Lock to type one and then type their password with it
+  // still down. Saying so is the difference between one failed sign-in and a
+  // call to whoever administers the system.
+  const checkCaps = (event) => {
+    caps.hidden = !event.getModifierState?.('CapsLock');
+  };
+  for (const node of [form.username, password]) {
+    node.addEventListener('keyup', checkCaps);
+    node.addEventListener('keydown', checkCaps);
+  }
+  password.addEventListener('blur', () => { caps.hidden = true; });
+}
+
 function wireChrome() {
+  wireLogin();
+
   $('#login-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;

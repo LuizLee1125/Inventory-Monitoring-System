@@ -272,6 +272,35 @@ account. That is a choice, not an oversight — it is a property of the screen
 someone is sitting at, and the same clerk on the warehouse terminal and the
 office PC will want different answers.
 
+## The sign-in screen
+
+Two panels: the name of the place on the left, the way in on the right. It was a
+single 380px card centred on a gradient, which said nothing about what the
+system is — and this is the first screen anyone sees.
+
+- **The brand panel keeps its own deep-blue palette in both themes.** It is a
+  printed cover, not a surface of the application; a dark-mode version of it
+  would only make it agree with less. It drops out entirely below 1000px, where
+  there is no room for it and the form should have the window.
+- **The ruling in the panel is a mask, not a picture.** The reference puts a
+  photograph of its building there. This business has no such photograph, so the
+  panel carries faint ledger ruling instead, faded out with a radial mask — the
+  same idea as the DOS system's character grid, at the size of a page. It keeps
+  the panel from being a flat rectangle without inventing an asset.
+- **The headline is sized to the panel, not to the type scale.** `clamp()` on
+  viewport width: it is display lettering on a cover with a whole column to
+  fill, which is the one place the scale in `app.css` does not apply.
+
+Two things on the form side exist for reasons specific to this office:
+
+- **The Caps Lock warning.** Every user name here is upper-case, carried over
+  from the DOS access file, so people hold Caps Lock to type one and then type
+  their password with it still down. Without the warning the rejection that
+  follows is a mystery and becomes a phone call.
+- **`showLogin()` re-masks the password and clears the warning.** A password
+  left revealed must not still be on screen for whoever signs in next, and the
+  warning belongs to the attempt that raised it.
+
 ## Form controls
 
 Fields are **filled wells**, not outlined boxes: `--field-bg` with a hairline

@@ -33,30 +33,60 @@
 
 <!-- ------------------------------------------------------------- sign in -->
 <div id="login" class="login" hidden>
-  <form class="login-card" id="login-form" autocomplete="on">
-    <div class="login-brand">
+
+  <!-- Brand panel. Drops out below 1000px, where there is no room for it and
+       the form should have the whole window. -->
+  <aside class="login-brand-panel">
+    <p class="login-org" id="login-org">Marina Trading</p>
+    <h1 class="login-headline">Inventory<br>Monitoring<br>System</h1>
+    <p class="login-since">Running since 1999 &middot; rebuilt for the web</p>
+  </aside>
+
+  <!-- Form column. -->
+  <div class="login-col">
+    <header class="login-head">
       <span class="mark">M</span>
-      <div>
-        <h1 id="login-company">Marina Trading</h1>
-        <p>Inventory Monitoring System</p>
-      </div>
+      <span class="login-wordmark" id="login-company">Marina Trading</span>
+    </header>
+
+    <div class="login-body">
+      <form class="login-form" id="login-form" autocomplete="on">
+        <h2>Sign in</h2>
+        <p class="login-lede">Use the account the office issued you.</p>
+
+        <p class="login-error" id="login-error" role="alert" hidden></p>
+
+        <label class="login-field">
+          <span>User name</span>
+          <span class="login-input">
+            <span class="ico user" aria-hidden="true"></span>
+            <input name="username" autocomplete="username" autocapitalize="characters"
+                   spellcheck="false" placeholder="NELIA" required autofocus>
+          </span>
+        </label>
+
+        <label class="login-field">
+          <span>Password</span>
+          <span class="login-input">
+            <span class="ico lock" aria-hidden="true"></span>
+            <input name="password" type="password" autocomplete="current-password"
+                   placeholder="••••••••" required>
+            <button type="button" class="login-reveal" id="login-reveal"
+                    aria-label="Show password" aria-pressed="false"></button>
+          </span>
+        </label>
+
+        <p class="login-caps" id="login-caps" hidden>Caps Lock is on.</p>
+
+        <button class="btn primary block" type="submit">Sign in</button>
+      </form>
     </div>
 
-    <label class="field">
-      <span>User name</span>
-      <input name="username" autocomplete="username" autocapitalize="characters"
-             spellcheck="false" required autofocus>
-    </label>
-
-    <label class="field">
-      <span>Password</span>
-      <input name="password" type="password" autocomplete="current-password" required>
-    </label>
-
-    <p class="login-error" id="login-error" hidden></p>
-    <button class="btn primary block" type="submit">Sign in</button>
-    <p class="login-foot">Running since 1999 &middot; rebuilt for the web</p>
-  </form>
+    <footer class="login-foot">
+      <span>Accounts are issued by an administrator.</span>
+      <span id="login-version"></span>
+    </footer>
+  </div>
 </div>
 
 <!-- ---------------------------------------------------------------- shell -->
