@@ -298,10 +298,16 @@ moment it was focused. Use `background-color`.
 stands in for it completely: `.value` reads and writes through, `.options`,
 `.selectedIndex`, `.selectedOptions` and `.disabled` forward, and `change`
 bubbles out of the real control inside. So `readForm()` still finds it by name
-and every caller stayed as it was. **Anything a caller reaches for on a
-`<select>` belongs in that forwarding block** — `salesReport()` reads
-`.options[.selectedIndex].text`, and it was found as a TypeError rather than by
-reading the code first.
+and every caller stayed as it was. `append`, `appendChild` and `add` route
+`<option>` children to the real select, because `stock.js` fills its division
+list from a fetch that resolves after render.
+
+**Anything a caller reaches for on a `<select>` belongs in that forwarding
+block.** Two were missed on the first pass and both surfaced as bugs rather
+than by reading the code: `salesReport()` reads `.options[.selectedIndex].text`
+and threw; `stock.js` appended options to what had become a `<div>`, which
+rendered their labels as loose prose across the toolbar. Adding a use of a
+native select API without adding it here will fail the same way.
 
 A native popup is drawn by the operating system: square corners, its own font,
 no animation, nothing about it matching the interface. So only the popup is

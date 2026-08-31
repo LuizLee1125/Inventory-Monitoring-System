@@ -373,11 +373,36 @@ function dropdown(native) {
     }
   });
 
+  // Options added after construction go to the real <select>, not to the
+  // wrapper. `stock.js` fills its division list from a fetch that resolves
+  // later, and appending an <option> to a <div> renders its text as loose
+  // prose beside the control — which is exactly what happened.
+  //
+  // The menu is built from `native.options` each time it opens, so an option
+  // added at any point simply appears in the list.
+  const isOption = (node) => node instanceof HTMLOptionElement
+    || node instanceof HTMLOptGroupElement;
+
+  wrap.append = (...nodes) => {
+    const [forNative, forWrap] = nodes.reduce(
+      ([a, b], node) => (isOption(node) ? [[...a, node], b] : [a, [...b, node]]),
+      [[], []]);
+    if (forNative.length) { native.append(...forNative); paint(); }
+    if (forWrap.length) Element.prototype.append.call(wrap, ...forWrap);
+  };
+  wrap.appendChild = (node) => {
+    if (isOption(node)) { native.appendChild(node); paint(); return node; }
+    return Element.prototype.appendChild.call(wrap, node);
+  };
+  /** HTMLSelectElement.add(), for anything that reaches for it. */
+  wrap.add = (option, before) => { native.add(option, before); paint(); };
+
   // Forwarding is the whole reason callers can stay as they were — including
   // the ones that assign to `.value` from outside without dispatching an event,
   // and `salesReport()`, which reads the chosen option's text through
   // `.options[.selectedIndex]`. Anything a caller reaches for on a <select>
-  // belongs here; the alternative is discovering it as a TypeError.
+  // belongs here; the alternative is discovering it as a TypeError, or as
+  // option labels printed across the toolbar.
   Object.defineProperties(wrap, {
     value: {
       get: () => native.value,
