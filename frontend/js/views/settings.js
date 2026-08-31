@@ -237,13 +237,65 @@ async function downloadInstaller(filename, button) {
   }
 }
 
+/**
+ * Put the address on the clipboard.
+ *
+ * `navigator.clipboard` needs a secure context, and this server is deliberately
+ * plain HTTP on a local network — so it exists on `localhost` and is missing on
+ * exactly the machines that most need to pass the link on, the counter PCs
+ * reaching `http://192.168.x.x`. The textarea fallback is the old way and works
+ * in both, so it is not dead code waiting for an old browser: on this system it
+ * is the path most people take.
+ */
+async function copyLink(link, button) {
+  const done = () => toast('Download link copied.', 'success');
+  try {
+    if (window.isSecureContext && navigator.clipboard) {
+      await navigator.clipboard.writeText(link);
+      done();
+      return;
+    }
+    // Off-screen rather than transparent: a zero-opacity field is skipped by
+    // the selection in some browsers, and there is nothing to see either way.
+    const area = el('input', {
+      value: link, readonly: true, style: 'position:fixed;left:-9999px;top:0',
+    });
+    document.body.append(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    if (ok) done();
+    else throw new Error('the browser refused');
+  } catch {
+    // Not a failure worth a red toast: the address is on screen above the
+    // button, selectable, and saying where it is beats saying what went wrong.
+    toast('Could not reach the clipboard — the address above can be selected '
+      + 'and copied by hand.', 'info', 'Copy link');
+    button.blur();
+  }
+}
+
 function desktopGroup(release) {
   const here = inDesktopApp();
 
-  // Inside the app already: saying "Download the desktop app" to somebody
-  // looking at the desktop app is the kind of detail that makes a system feel
-  // like it is not paying attention.
+  // The address to hand somebody, absolute rather than `/api/...`, because the
+  // point of a copyable link is that it works when it is pasted somewhere else.
+  // `location.origin` is the server this page came from, which on a counter PC
+  // is already the network address the rest of the office uses.
+  const link = `${window.location.origin}/api/desktop/download`;
+
+  // Inside the app already: offering somebody a download of the application
+  // they are looking at is the kind of detail that makes a system feel like it
+  // is not paying attention. The *link* still earns its place — passing it to
+  // the next counter is a thing people do from the app as readily as from a
+  // browser — so it stays, without the Download beside it.
   if (here) {
+    const copy = el('button', {
+      class: 'btn', type: 'button',
+      style: '--dl-ico:var(--icon-copy)',
+      onClick: () => copyLink(link, copy),
+    }, [el('span', { class: 'ico', 'aria-hidden': 'true' }), 'Copy link']);
+
     return group('Desktop app', [
       row('This window', 'You are using the installed application rather than a browser.',
         el('span', { class: 'tag ok', text: 'Installed' })),
@@ -253,6 +305,12 @@ function desktopGroup(release) {
         : null,
       row('Everyone else', 'The system stays open to any browser on the network.',
         value('Unaffected', 'dim')),
+      release?.available
+        ? el('div', { class: 'set-stack' }, [
+          el('p', { class: 'dl-url', style: 'margin:0', text: link }),
+          el('div', { class: 'dl-actions', style: 'margin-top:12px' }, [copy]),
+        ])
+        : null,
     ]);
   }
 
@@ -269,29 +327,43 @@ function desktopGroup(release) {
     ]));
   }
 
-  const button = el('button', {
-    class: 'btn primary',
-    type: 'button',
-    text: 'Download',
-    onClick: () => downloadInstaller(release.filename, button),
-  });
+  const download = el('button', {
+    class: 'btn primary', type: 'button',
+    style: '--dl-ico:var(--icon-download)',
+    onClick: () => downloadInstaller(release.filename, download),
+  }, [el('span', { class: 'ico', 'aria-hidden': 'true' }), 'Download installer']);
+
+  const copy = el('button', {
+    class: 'btn', type: 'button',
+    style: '--dl-ico:var(--icon-copy)',
+    onClick: () => copyLink(link, copy),
+  }, [el('span', { class: 'ico', 'aria-hidden': 'true' }), 'Copy link']);
 
   return group('Desktop app', [
-    // Stacked deliberately. The sentence under the label is long enough that a
-    // side-by-side row wraps anyway at this column width; saying so here means
-    // the layout is chosen rather than arrived at, and the button keeps its
-    // left edge lined up with the text above it.
-    row('Install on this PC',
-      'An icon on the desktop and no console window. It opens this same '
-      + 'system, so nothing you do moves anywhere else.',
-      button, { stacked: true }),
-    row('Version', release.built ? `Built ${dateTime(release.built)}.` : '',
-      value(release.version ? `v${release.version}` : release.kind.toUpperCase(),
-        'mono dim')),
-    row('Download size', '', value(megabytes(release.size), 'dim')),
+    el('div', { class: 'set-stack' }, [
+      el('div', { class: 'dl-head' }, [
+        el('span', { class: 'dl-icon', 'aria-hidden': 'true' }),
+        el('div', { class: 'dl-what' }, [
+          el('strong', { text: 'Windows desktop installer' }),
+          el('span', { title: release.filename, text: release.filename }),
+        ]),
+        el('span', {
+          class: 'tag info',
+          text: release.version ? `v${release.version} · latest` : release.kind.toUpperCase(),
+        }),
+      ]),
+      el('p', { class: 'dl-url', text: link }),
+      el('div', { class: 'dl-actions' }, [download, copy]),
+      el('p', { class: 'hint', style: 'margin:0' }, [
+        `${megabytes(release.size)}`,
+        release.built ? ` · built ${dateTime(release.built)}` : '',
+        '. Optional — the browser you are reading this in keeps working exactly '
+        + 'as it does now, and so does everyone else’s.',
+      ]),
+    ]),
   ], el('p', { class: 'hint', style: 'margin:0' }, [
-    'Optional. The browser you are reading this in keeps working exactly as it '
-    + 'does now, and so does everyone else’s.',
+    'The link is on this server, not the internet, so it works with the office '
+    + 'line down. Anyone opening it needs to be signed in here first.',
   ]));
 }
 

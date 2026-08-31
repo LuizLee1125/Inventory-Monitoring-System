@@ -75,6 +75,18 @@ is already signed in to. Every role reaches Settings, and installing the client
 grants nothing that signing in does not — the permission checks that matter are
 on the endpoints the app then calls.
 
+The card is shaped after the "Get the software" panel in `NTC-TMS-Tauri`: the
+file, its name, a version pill, the **address in full**, then Download installer
+and Copy link. The address is built from `location.origin`, so on a counter PC it
+is already the network address the rest of the office uses and pastes usefully
+into a message.
+
+`copyLink()` falls back to a hidden field and `execCommand('copy')` rather than
+only using `navigator.clipboard`. That is not legacy code: the clipboard API
+needs a secure context, and this server is deliberately plain HTTP on a LAN, so
+it is present on `localhost` and **missing on every machine that most needs to
+pass the link on**. The fallback is the path most people here take.
+
 `GET /api/desktop` reports what there is; `GET /api/desktop/download` sends it
 (`backend/app/routers/desktop.py`). What it offers is the newest installer in
 `releases/`, and failing that whatever `npm run build` last wrote into

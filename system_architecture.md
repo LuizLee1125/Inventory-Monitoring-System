@@ -1067,3 +1067,28 @@ The logout is a bare `fetch` rather than `api.post` on purpose - a 401 is the
 ordinary answer when nobody was signed in, and it must not reach the
 unauthorized listeners, whose job is to announce a session that ended in the
 middle of somebody's work.
+
+### The clipboard fallback is the main path, not the legacy one
+
+`copyLink()` in `views/settings.js` tries `navigator.clipboard.writeText` and
+falls back to an off-screen field and `document.execCommand('copy')`. Read
+quickly that looks like a courtesy for old browsers. It is the opposite.
+
+`navigator.clipboard` requires a **secure context**. `localhost` counts as one;
+`http://192.168.100.17:8080` does not. This server is deliberately plain HTTP on
+a local network, so the modern API is available on exactly the machine that does
+not need it — the server itself — and missing on every counter PC, which is
+where somebody actually stands when they want to send the installer link to the
+next desk. The fallback is the path most of this office takes.
+
+Two details that keep it working:
+
+- The field is positioned off-screen rather than at `opacity: 0`; a transparent
+  field is skipped by the selection in some browsers.
+- `execCommand('copy')` needs user activation, so it only ever runs from the
+  button's own click handler. A programmatic `.click()` returns `false` — which
+  is what a test harness sees, and is not a bug.
+
+Failure is a plain `info` toast, not an error: the address is on screen directly
+above the button and can be selected by hand, so pointing at it beats explaining
+a permissions model.

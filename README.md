@@ -340,9 +340,15 @@ exactly as it always has, session and all.
 
 ### Getting it onto a PC
 
-**Settings → Desktop app → Download.** Every role reaches Settings, so anybody
-can install it on the machine they are sitting at; nothing about it is
+**Settings → Desktop app → Download installer.** Every role reaches Settings, so
+anybody can install it on the machine they are sitting at; nothing about it is
 privileged, and installing the client grants nothing that signing in does not.
+
+Beside it is the **link itself** — `http://<this server>:8080/api/desktop/download`
+— shown in full and copyable with one button, so it can be sent to somebody at
+another counter rather than walked over to. It is an address on this server, not
+on the internet, so it works with the office line down; whoever opens it needs to
+be signed in here first.
 
 The installer comes off this server rather than off the internet. `NTC-TMS-Tauri`
 fetches its releases from cloud storage because its users are spread across the
@@ -359,16 +365,30 @@ decision rather than a side effect of compiling.
 
 If Settings says *None on this server*, nobody has built one yet.
 
-### Running it
+### Launching it
 
-```bash
-start-desktop.bat
-```
+There are three ways to open this system, and they are not the same thing.
 
-First run installs the Tauri CLI and compiles the Rust shell, which takes
-several minutes; after that it starts in seconds. Needs
-[Node.js](https://nodejs.org) and the [Rust toolchain](https://rustup.rs) —
-neither is needed by the web edition, and neither is needed on the workstations.
+| What you want | What to open | What you get |
+| --- | --- | --- |
+| **The web edition** | A browser, at `http://localhost:8080` or `http://<server>:8080` | A tab. The server must already be running — `start.bat`, or the desktop app in host mode |
+| **The desktop app, installed** | **Start menu → Marina IMS**, or the desktop shortcut the installer makes | The application. It starts the server itself if it is set to host |
+| **The desktop app, from source** | `start-desktop.bat` | The same application, compiled fresh — for changing it, not for using it |
+
+`start.bat` does **not** open the desktop app; it starts the server and nothing
+else. `start-desktop.bat` is the *development* launcher: it needs
+[Node.js](https://nodejs.org) and the [Rust toolchain](https://rustup.rs),
+compiles the Rust shell on the first run, and takes several minutes to do it.
+Neither tool is needed by the web edition and neither belongs on a workstation
+— the installer is what goes there.
+
+The two can be open at once. They are the same server and the same data, so an
+invoice raised in the app is on the browser's screen when it refreshes.
+
+If the installed app is set to host and `start.bat` is already running, the app
+**attaches** to that server rather than starting a second one. That is why
+closing the app does not always stop the server: it only stops the one it
+started itself.
 
 To produce an installer for the office:
 
@@ -502,7 +522,7 @@ Every account has one, whatever its role: click the initials at the top right an
 | Account | The account's initials as its picture, name and role, then user name, full name, the DOS menu the role replaces, how many permissions it grants, when the account was opened and when this sign-in began. Read-only — changing somebody's account is Users & Audit, which is where the permission for it lives. |
 | Security | Change your own password. Eight characters or more. You stay signed in on this device. **This is the only place it can be done** — it used to be in the account menu as well, which meant two ways in. The DOS key `9` still works and lands here. |
 | Appearance | **Light**, **Dark**, or **System**, which follows whatever the PC is set to and keeps following it. The choice is remembered in that browser on that PC, not on the account. |
-| Desktop app | Download and install the [desktop edition](#desktop-edition) on this PC — version, size, and a button. Opened from inside the app itself it says so instead, rather than offering somebody the thing they are already using. |
+| Desktop app | Install the [desktop edition](#desktop-edition) on this PC: the file name, the version, its size, the address it comes from, and **Download installer** / **Copy link**. Every account has it, whatever the role. Opened from inside the app itself it says *Installed* and keeps only the link — offering somebody a download of what they are already running is not a useful thing to do. |
 | System | Company, application, version, and how many roles are defined. |
 
 The appearance choice is remembered in that browser, on that PC — not on the account. The
