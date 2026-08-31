@@ -7,6 +7,9 @@ import {
 import { currentPath, resolve, route, setNotFound, start } from './router.js';
 import { setupSearch } from './omni.js';
 import { initTheme } from './theme.js';
+import {
+  closeNotifications, startNotifications, stopNotifications, wireNotifications,
+} from './notify.js';
 
 import * as home from './views/home.js';
 import * as dashboard from './views/dashboard.js';
@@ -24,6 +27,7 @@ import * as collections from './views/collections.js';
 import * as reports from './views/reports.js';
 import * as admin from './views/admin.js';
 import * as settings from './views/settings.js';
+import * as notifications from './views/notifications.js';
 
 export const session = { user: null, meta: null };
 
@@ -94,7 +98,12 @@ const ROLE_SCREENS = {
 // Screens that belong to the account rather than to the business. Every signed-in
 // user reaches these whatever their role shows them, which is why they sit
 // outside ROLE_SCREENS instead of being repeated in each role's list.
-const ACCOUNT_SCREENS = ['/settings'];
+//
+// `/notifications` qualifies for the same reason `/settings` does: the list is
+// this person's, and what it may contain is already filtered by permission on
+// the server. It has no sidebar entry — the bell is the only way in — so it
+// appears here and nowhere in NAV.
+const ACCOUNT_SCREENS = ['/settings', '/notifications'];
 
 function allowed(path) {
   const target = path.split('?')[0];
@@ -115,7 +124,10 @@ function buildNav() {
   clear(nav);
 
   // First in the DOM so the links paint over it.
-  nav.append(el('span', { class: 'nav-pill', id: 'nav-pill', 'aria-hidden': true }));
+  // 'true' as a string, not a boolean: el() writes a bare `true` out as an
+  // empty attribute, and `aria-hidden=""` is an invalid token that resolves
+  // back to "not hidden".
+  nav.append(el('span', { class: 'nav-pill', id: 'nav-pill', 'aria-hidden': 'true' }));
 
   let index = 0;
   for (const section of NAV) {
@@ -131,7 +143,7 @@ function buildNav() {
         style: `--i:${Math.min(index += 1, NAV_STAGGER_CAP)};`
           + `--nav-icon:var(--nav-${item.icon});--nav-icon-on:var(--nav-${item.icon}-on)`,
       }, [
-        el('span', { class: 'ico', 'aria-hidden': true }),
+        el('span', { class: 'ico', 'aria-hidden': 'true' }),
         item.label,
       ]));
     }
@@ -291,6 +303,11 @@ function registerRoutes() {
   route('/settings', (params) => {
     if (session.user) mount(settings, params);
   });
+  // Same reasoning: everybody has notifications, and which ones they are is
+  // decided per row on the server rather than by a permission on the route.
+  route('/notifications', (params) => {
+    if (session.user) mount(notifications, params);
+  });
 
   setNotFound(() => {
     setTitle('Not found');
@@ -363,6 +380,12 @@ function showLogin(message = '') {
   $('#login').hidden = false;
   showLoginError(message);
 
+  // Every way back to this screen comes through here — signing out, an expired
+  // session, a rejected call — so it is the one place the poll has to be
+  // stopped. Left running it would keep asking a server that has already said
+  // 401, and the next person to sign in would inherit the last one's badge.
+  stopNotifications();
+
   // A password left revealed must not still be on screen for whoever signs in
   // next, and the caps warning belongs to the attempt that raised it.
   const form = $('#login-form');
@@ -392,6 +415,7 @@ async function showShell() {
 
   buildNav();
   setupSearch();
+  startNotifications();
   if (started) resolve();
 
   if (session.user.must_change_password) {
@@ -549,6 +573,12 @@ function wireChrome() {
   $('#btn-settings').addEventListener('click', closeAccountMenu);
   $('#menu-toggle').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
 
+  wireNotifications();
+  // The panel closes the account menu from this side, because notify.js cannot
+  // import from app.js without a cycle. `stopPropagation` inside its own
+  // handler stops the event bubbling, not the other listeners on this button.
+  $('#btn-bell').addEventListener('click', closeAccountMenu);
+
   const account = $('#btn-account');
   account.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -556,10 +586,18 @@ function wireChrome() {
     const opening = menu.hidden;
     menu.hidden = !opening;
     account.setAttribute('aria-expanded', String(opening));
+    // Two popovers in one corner: opening either closes the other, or they
+    // overlap and both claim to be open.
+    if (opening) closeNotifications();
   });
-  document.addEventListener('click', closeAccountMenu);
+  document.addEventListener('click', () => {
+    closeAccountMenu();
+    closeNotifications();
+  });
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeAccountMenu();
+    if (event.key !== 'Escape') return;
+    closeAccountMenu();
+    closeNotifications();
   });
 
   onUnauthorized(() => {

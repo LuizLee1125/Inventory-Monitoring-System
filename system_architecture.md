@@ -210,6 +210,123 @@ documented where they live: `.print-doc` and the `.doc-*` rules, which are
 measured against a sheet of paper and the boxes on a pre-printed form rather
 than against the screen, and icon glyph sizes, which are not text.
 
+## Notifications (v0.4)
+
+The conditions worth telling the office about — an item at its reorder point, a
+lot near expiry, a scheduled backup that failed — all become true **while
+nobody is looking at the screen**. A toast cannot carry any of them: it lasts
+four seconds and only exists if somebody happened to be on that page at that
+moment. So the server raises them, stores them, and each user reads them back.
+
+`backend/app/notifications.py` is the whole model. Two shapes of alert, and the
+difference is the thing to keep straight:
+
+| | Raised by | Closed by |
+| --- | --- | --- |
+| **Conditions** (`stock.*`) | `sweep()`, from a query | `sweep()`, when the query stops returning it |
+| **Events** (`backup.failed`) | whoever noticed, via `raise_alert()` | `resolve()`, by whoever notices it is better |
+
+Nothing outside the module decides when a condition starts or stops. An event
+needs an explicit `resolve()` because no query can ask "did the backup fail?"
+after the fact — `run_scheduled_backup()` raises in its `except` and resolves on
+the next success, so the alert answers *are backups running* rather than *did
+one ever fail*.
+
+### Above a handful, a condition becomes one row
+
+This is the decision the whole feature turned on, and it came out of the data.
+**Every one of this office's 2,137 active stock rows reads `qty_on_hand = 0`** —
+the column was never populated by the migration. The first working sweep
+therefore wanted to raise 2,137 alerts, and a bell holding 2,137 rows is not a
+bell.
+
+So a condition matching more than `NOTIFY_ROLLUP_AT` (8) collapses to a single
+row carrying the count, a few example codes, and a link to the report that
+lists them all. Nothing is hidden — the report is unchanged — but the bell says
+"2,137 items show nothing on hand" once instead of 2,137 times.
+
+The two forms are mutually exclusive per kind and the sweep moves between them
+in both directions: crossing the threshold closes the per-item rows and opens
+the rollup, and dropping back below it does the reverse. The rollup's key is
+`<kind>:*`, which cannot collide with a per-item key because a stock code never
+contains an asterisk.
+
+An earlier version capped how many rows one sweep could open instead. It was
+wrong in a way worth recording: the budget was shared across conditions and
+spent in order, so `stock.depleted` consumed all of it on every tick and the
+expiry alerts would never have appeared at all.
+
+### Dedupe, resolve, re-open
+
+`dedupe_key` is `UNIQUE` and the sweep upserts onto it. Without that, a
+fortnight of one item sitting below its reorder point is 1,344 identical rows,
+because the sweep runs every fifteen minutes over a condition that does not
+change.
+
+A condition that stops being true is **stamped `resolved_at`, never deleted**.
+That is what makes it safe to raise the same key again: restocking an item and
+then running it down again is two events and should read as two.
+
+**Re-opening clears that row's `notification_reads`.** This is the one detail
+that decides whether the feature can be trusted — without it, the second time
+an item runs out it arrives already-read for everybody who saw the first, and
+the bell quietly stops mentioning things that are happening.
+
+### Visibility is a permission, not a role
+
+Each row carries the permission needed to see it, and `list_for()` filters on
+what the signed-in user holds. A sales clerk is never told the backup failed.
+Expressing it this way means there is no second list of roles to keep in step
+with `security.ROLES` — and it is why every endpoint in
+`routers/notifications.py` is behind plain `current_user` rather than
+`require(...)`: a permission on the route would have to be one every role holds,
+which is the same as no filter at all.
+
+`mark_read()` re-checks visibility before writing, so a stale panel cannot be
+used to mark somebody else's alerts read.
+
+### The badge counts open and unread
+
+A resolved alert stops counting even if it was never read — the badge is a
+count of things wanting attention, and something that has already fixed itself
+is not one. It stays in the list, where "Everything" can still find it.
+
+### Schema
+
+`070_notifications.sql`. `notification_reads.user_id` deliberately carries **no
+`REFERENCES users(id)`**: the folder's rule is that a foreign key never crosses
+a part file, and `users` is declared in `010_security.sql`. The cost is that
+deleting a user leaves rows behind — two integers, nothing joins back, no read
+is wrong because of them.
+
+### The bell, and the screen with no front door
+
+`frontend/js/notify.js` owns the badge, the panel and the poll; the panel and
+the `/notifications` screen draw their rows with the **same** `notificationRow()`
+so the summary and the full list cannot drift apart.
+
+- **`/notifications` is in `ACCOUNT_SCREENS`, not `ROLE_SCREENS`,** for the same
+  reason `/settings` is: the list belongs to the person, and its contents are
+  already filtered per row. **It has no `NAV` entry at all** — the bell's "View
+  all notifications" is the only way in. A rail entry would be a second front
+  door to a screen nobody navigates to on purpose.
+- **The poll asks for the count, never the list.** The list is fetched when the
+  panel is opened. It stops on `visibilitychange` and asks once on the way back,
+  because a workstation left on overnight would otherwise make several hundred
+  pointless requests before anybody returned to it.
+- **The first poll after sign-in announces nothing.** Everything is new to a
+  page that has just loaded, and six toasts on arrival is not a welcome. Only a
+  count that *rises* afterwards fetches the unread few and toasts them, which is
+  also the one place the toasts and the bell are the same feed.
+- **`showLogin()` stops the poll**, because every way back to that screen goes
+  through it — signing out, an expired session, a rejected call. Left running it
+  would keep asking a server that has already said 401, and the next person to
+  sign in would inherit the last one's badge.
+- Opening either popover in that corner closes the other. `notify.js` cannot
+  import from `app.js` without a cycle, so `app.js` adds the second listener to
+  the bell; `stopPropagation()` inside the module's own handler stops the event
+  bubbling, not the other listeners on the same button.
+
 ## The sidebar icons
 
 Every mark in the rail was a Unicode character until v0.4 — `⌂ ▣ ☺ ⎙ ⇩ ↩ ₱ ⛃ ⌸

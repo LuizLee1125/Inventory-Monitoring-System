@@ -90,6 +90,22 @@ PORT = int(os.getenv("IMS_PORT", "8080"))
 # working because the iteration count is stored alongside each hash.
 PBKDF2_ROUNDS = int(os.getenv("IMS_PBKDF2_ROUNDS", "260000"))
 
+# Notifications. The sweep rides on the backup schedule's existing tick rather
+# than running a timer of its own — it is the same question ("has anything
+# changed since I last looked?") asked of a different set of tables, and one
+# worker thread waking every fifteen minutes is enough for both.
+#
+# The expiry window matches the one the dashboard already counts against
+# (reports.py `dashboard()`), so the tile and the alert cannot disagree.
+NOTIFY_EXPIRY_DAYS = int(os.getenv("IMS_NOTIFY_EXPIRY_DAYS", "90"))
+
+# Above this many at once, a condition stops being a list of alerts and becomes
+# one alert with a count on it. Measured against this office's own data: every
+# one of its 2,137 active items currently reads zero on hand, and a bell holding
+# 2,137 rows is not a bell. Past a handful the useful answer is "how many, and
+# here is the report", which is one row.
+NOTIFY_ROLLUP_AT = int(os.getenv("IMS_NOTIFY_ROLLUP_AT", "8"))
+
 # Accounts receivable aging buckets, in days.
 AGING_BUCKETS = (30, 60, 90)
 

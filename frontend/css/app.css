@@ -210,6 +210,7 @@
   --icon-menu: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round'%3E%3Cpath d='M3.4 6h13.2'/%3E%3Cpath d='M3.4 10h13.2'/%3E%3Cpath d='M3.4 14h13.2'/%3E%3C/svg%3E");
   --icon-gear: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8.5 2.9h3l.35 2.05a5.2 5.2 0 0 1 1.35.78l1.95-.78 1.5 2.6-1.6 1.32a5.2 5.2 0 0 1 0 1.56l1.6 1.32-1.5 2.6-1.95-.78a5.2 5.2 0 0 1-1.35.78L11.5 17.1h-3l-.35-2.05a5.2 5.2 0 0 1-1.35-.78l-1.95.78-1.5-2.6 1.6-1.32a5.2 5.2 0 0 1 0-1.56l-1.6-1.32 1.5-2.6 1.95.78a5.2 5.2 0 0 1 1.35-.78Z'/%3E%3Ccircle cx='10' cy='10' r='2.4'/%3E%3C/svg%3E");
   --icon-power: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 2.9v7.3'/%3E%3Cpath d='M14.6 5.6a6.5 6.5 0 1 1-9.2 0'/%3E%3C/svg%3E");
+  --icon-bell: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 2.6a5 5 0 0 0-5 5c0 3.4-1.1 4.6-1.5 5a.6.6 0 0 0 .4 1h12.2a.6.6 0 0 0 .4-1c-.4-.4-1.5-1.6-1.5-5a5 5 0 0 0-5-5Z'/%3E%3Cpath d='M8.4 16.2a1.9 1.9 0 0 0 3.2 0'/%3E%3C/svg%3E");
 
   --sidebar-w: 236px;
   --topbar-h: 60px;
@@ -760,18 +761,18 @@ a { color: var(--primary); }
 }
 .nav a.active:hover { background: none; }
 
-/* Drawn, not typed. See the `--nav-*` block at the top of this file for why.
+/* Drawn, not typed — see the `--nav-*` block at the top of this file for why.
    A fixed 20px cell rather than a shrink-to-fit glyph, so every label in the
-   rail starts on the same vertical line. */
-/* The cell itself draws nothing. It is a 20px box holding two mask layers,
-   which is what lets each layer carry its own alpha — `opacity` on the cell
-   would multiply into both of them and the cross-fade below could not work. */
+   rail starts on the same vertical line, and the cell itself draws nothing: it
+   holds two mask layers as `::before` and `::after`, which is what lets each
+   carry its own alpha. `opacity` on the cell would multiply into both and the
+   cross-fade below could not work. */
 .nav a .ico {
   position: relative;
   width: 20px;
   height: 20px;
   flex: none;
-  transition: transform var(--dur) var(--ease-out);
+  transition: transform var(--dur-fast) var(--ease-out);
 }
 .nav a .ico::before,
 .nav a .ico::after {
@@ -779,26 +780,39 @@ a { color: var(--primary); }
   position: absolute;
   inset: 0;
   background: currentColor;
-  transition: opacity var(--dur) var(--ease);
 }
+/* The fallback is what an unknown icon name resolves to, and it has to be a
+   real transparent image. Left undefined, `var()` takes the whole shorthand
+   down with it, `mask-image` computes to `none` — which is no mask at all —
+   and the cell paints as a solid 20px block of `currentColor`. A typo in NAV
+   should disappear, not shout. */
 .nav a .ico::before {
   opacity: .8;
-  -webkit-mask: var(--nav-icon) center / 18px 18px no-repeat;
-  mask: var(--nav-icon) center / 18px 18px no-repeat;
+  -webkit-mask: var(--nav-icon, linear-gradient(transparent, transparent)) center / 18px 18px no-repeat;
+  mask: var(--nav-icon, linear-gradient(transparent, transparent)) center / 18px 18px no-repeat;
+  /* Hover is a pointer response, so it takes the pointer duration. */
+  transition: opacity var(--dur-fast) var(--ease);
 }
 /* The heavier weight of the same mark, cross-faded in when the row is active.
    Two mask images cannot be tweened, so the transition between them is an
    opacity one — NTC-TMS-Tauri's `wght 350 → wght 500`, animated. */
 .nav a .ico::after {
   opacity: 0;
-  -webkit-mask: var(--nav-icon-on) center / 18px 18px no-repeat;
-  mask: var(--nav-icon-on) center / 18px 18px no-repeat;
+  -webkit-mask: var(--nav-icon-on, linear-gradient(transparent, transparent)) center / 18px 18px no-repeat;
+  mask: var(--nav-icon-on, linear-gradient(transparent, transparent)) center / 18px 18px no-repeat;
+  /* Not a pointer response — this one answers a navigation. */
+  transition: opacity var(--dur) var(--ease);
 }
 .nav a:hover .ico { transform: scale(1.09); }
 .nav a:hover .ico::before { opacity: 1; }
 /* The outline does not fade all the way out. At 0 the mark thins for a frame
-   in the middle of the cross-fade, before the heavy one has fully arrived. */
-.nav a.active .ico::before { opacity: .3; }
+   in the middle of the cross-fade, before the heavy one has fully arrived —
+   and it travels at the cross-fade's duration, not the hover's, or the two
+   halves of one movement run at different speeds. */
+.nav a.active .ico::before {
+  opacity: .3;
+  transition-duration: var(--dur);
+}
 .nav a.active .ico::after { opacity: 1; }
 
 .sidebar-foot {
@@ -1042,16 +1056,19 @@ a { color: var(--primary); }
   transition: background-color var(--dur-fast) var(--ease),
               color var(--dur-fast) var(--ease);
 }
+/* Same two-token contract as the sidebar: the row carries `--ico` inline and
+   this draws it. Same transparent fallback, for the same reason — without one
+   a row that forgets the variable is a solid square, not a missing icon. */
 .account-item .ico {
   width: 17px;
   height: 17px;
   flex: none;
   background: currentColor;
   color: var(--text-faint);
-  -webkit-mask: var(--nav-icon) center / contain no-repeat;
-  mask: var(--nav-icon) center / contain no-repeat;
+  -webkit-mask: var(--ico, linear-gradient(transparent, transparent)) center / contain no-repeat;
+  mask: var(--ico, linear-gradient(transparent, transparent)) center / contain no-repeat;
   transition: color var(--dur-fast) var(--ease),
-              transform var(--dur) var(--ease-out);
+              transform var(--dur-fast) var(--ease-out);
 }
 .account-item:hover .ico { transform: scale(1.09); }
 .account-item:hover { background: var(--surface-2); }
@@ -1064,6 +1081,185 @@ a { color: var(--primary); }
 .account-item.danger { color: var(--danger); }
 .account-item.danger:hover { background: var(--danger-soft); }
 .account-item.danger:hover .ico { color: var(--danger); }
+
+/* --------------------------------------------------------- notifications -- */
+/* The bell sits beside the avatar and shares the account menu's shape, because
+   they are the same gesture in the same corner and two different popovers there
+   would read as two different applications. */
+
+.bell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px; height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease);
+}
+.bell:hover { background: var(--surface-2); color: var(--text); }
+.bell[aria-expanded="true"] { background: var(--surface-2); color: var(--primary); }
+.bell .ico {
+  width: 19px; height: 19px;
+  background: currentColor;
+  -webkit-mask: var(--icon-bell) center / contain no-repeat;
+  mask: var(--icon-bell) center / contain no-repeat;
+}
+
+/* The ring is the top bar's own colour, so the badge reads as sitting on top of
+   the bell rather than as part of the drawing. */
+.bell-badge {
+  position: absolute;
+  top: -1px; right: -2px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--surface);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 17px;
+  text-align: center;
+  animation: pop-in var(--dur) var(--ease-out);
+}
+
+.notif-menu {
+  position: absolute;
+  top: calc(100% + var(--sp-3));
+  right: 0;
+  z-index: 55;
+  width: 370px;
+  max-width: calc(100vw - var(--sp-6));
+  padding: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  transform-origin: top right;
+  animation: pop-in var(--dur) var(--ease-out);
+}
+.notif-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.notif-head strong { font-size: var(--fs-md); }
+.notif-readall {
+  padding: var(--sp-1) var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.notif-readall:hover:not(:disabled) { background: var(--primary-soft); }
+.notif-readall:disabled { color: var(--text-faint); cursor: default; }
+
+/* Capped and scrolled rather than unbounded: the panel is a summary, and
+   anything longer than this is what the screen behind "View all" is for. */
+.notif-list { max-height: 46vh; overflow-y: auto; padding: var(--sp-1) 0; }
+
+.notif-item {
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.notif-item:hover { background: var(--surface-2); }
+
+/* Unread is a filled dot in the severity's colour and a heavier title; read is
+   a hollow ring and normal weight. The severity still shows when read — an item
+   being out of stock does not become less true once somebody has seen it. */
+.notif-dot {
+  flex: none;
+  width: 8px; height: 8px;
+  margin-top: 5px;
+  border-radius: var(--radius-full);
+  background: var(--text-faint);
+}
+.notif-item.sev-warn  .notif-dot { background: var(--warn); }
+.notif-item.sev-error .notif-dot { background: var(--danger); }
+.notif-item.read .notif-dot {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--border-strong);
+}
+.notif-item.read.sev-warn  .notif-dot { box-shadow: inset 0 0 0 1.5px var(--warn); }
+.notif-item.read.sev-error .notif-dot { box-shadow: inset 0 0 0 1.5px var(--danger); }
+
+.notif-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.notif-text strong {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  line-height: var(--lh-snug);
+}
+.notif-item.read .notif-text strong {
+  font-weight: var(--fw-normal);
+  color: var(--text-dim);
+}
+.notif-body { font-size: var(--fs-xs); color: var(--text-dim); line-height: var(--lh-snug); }
+.notif-when { font-size: var(--fs-2xs); color: var(--text-faint); }
+.notif-item.resolved .notif-when::after {
+  content: " · cleared";
+  color: var(--ok);
+}
+
+.notif-all {
+  display: block;
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: center;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.notif-all:hover { background: var(--primary-soft); }
+.notif-empty {
+  padding: var(--sp-8) var(--sp-4);
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+/* The screen behind "View all notifications". Same rows, more room, and no
+   height cap — this is the one place the whole list belongs. */
+.notif-page .notif-list { max-height: none; overflow: visible; padding: 0; }
+.notif-page .notif-item {
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+.notif-page .notif-item:last-child { border-bottom: 0; }
+.notif-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+.notif-foot .btn { margin-left: auto; }
+.notif-foot .btn + .btn { margin-left: var(--sp-2); }
 
 .page { flex: 1; overflow-y: auto; padding: var(--sp-6) var(--sp-6) var(--sp-10); }
 
@@ -2005,13 +2201,29 @@ input[type="date"] { min-height: 34px; }
 
 /* -------------------------------------------------------------- toasts -- */
 
+/* Below the top bar on the right, not in the bottom corner. Two consequences
+   of the move, and both of them are the whole reason it is not a one-line
+   change of `bottom` to `top`:
+
+   - `column-reverse`, so the newest is at the TOP of the stack. Appending to a
+     plain column would have put it at the bottom, which in a top-anchored
+     stack means the message you have already read stays under your eye and the
+     new one arrives furthest from it.
+   - `pop-in`, not `slide-in`. `slide-in` travels up from below, which is right
+     for a stack rising out of the bottom corner and wrong for one hanging from
+     the top — the toast would have flown past its resting place. `pop-in`
+     comes down from above.
+
+   `--topbar-h` rather than a plain gap: the account menu opens into that
+   corner, and a toast overlapping the avatar it came from is the one place
+   this position is worse than the old one. */
 .toasts {
   position: fixed;
   right: var(--sp-5);
-  bottom: var(--sp-5);
+  top: calc(var(--topbar-h) + var(--sp-3));
   z-index: 90;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: var(--sp-2);
   max-width: 380px;
 }
@@ -2023,7 +2235,7 @@ input[type="date"] { min-height: 34px; }
   box-shadow: var(--shadow-pop);
   font-size: var(--fs-sm);
   line-height: var(--lh-snug);
-  animation: slide-in var(--dur) var(--ease-out);
+  animation: pop-in var(--dur) var(--ease-out);
 }
 .toast.error { border-left-color: var(--danger); }
 .toast.success { border-left-color: var(--ok); }

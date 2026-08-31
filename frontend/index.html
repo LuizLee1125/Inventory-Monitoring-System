@@ -125,6 +125,27 @@
       </div>
 
       <div class="topbar-right">
+        <button class="bell" id="btn-bell" type="button" title="Notifications"
+                aria-haspopup="menu" aria-expanded="false" aria-label="Notifications">
+          <span class="ico" aria-hidden="true"></span>
+          <span class="bell-badge" id="bell-badge" hidden></span>
+        </button>
+        <!-- The panel is the summary; the screen behind "View all" is the whole
+             list, and it is the only way in — there is no sidebar entry. -->
+        <div class="notif-menu" id="notif-menu" hidden role="menu"
+             aria-labelledby="btn-bell">
+          <div class="notif-head">
+            <strong>Notifications</strong>
+            <button class="notif-readall" id="btn-read-all" type="button">
+              Mark all read
+            </button>
+          </div>
+          <div class="notif-list" id="notif-list"></div>
+          <a class="notif-all" id="btn-view-all" href="#/notifications">
+            View all notifications
+          </a>
+        </div>
+
         <button class="avatar" id="btn-account" aria-haspopup="menu" aria-expanded="false">
           <span id="avatar-initials">··</span>
         </button>
@@ -140,12 +161,12 @@
                of the account. It was here as well, which meant two ways in and
                two things to keep in step. -->
           <a class="account-item" id="btn-settings" href="#/settings"
-             style="--nav-icon:var(--icon-gear)">
+             style="--ico:var(--icon-gear)">
             <span class="ico" aria-hidden="true"></span>Settings
           </a>
           <div class="account-sep"></div>
           <button class="account-item danger" id="btn-logout"
-                  style="--nav-icon:var(--icon-power)">
+                  style="--ico:var(--icon-power)">
             <span class="ico" aria-hidden="true"></span>Sign out
           </button>
         </div>

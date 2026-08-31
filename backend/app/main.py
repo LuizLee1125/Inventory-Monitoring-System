@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, config, db, security
+from . import __version__, config, db, notifications as alerts, security
 from .routers import (
     admin,
     archive,
@@ -19,6 +19,7 @@ from .routers import (
     customers,
     invoices,
     maintenance,
+    notifications,
     purchases,
     reports,
     returns,
@@ -47,26 +48,32 @@ def lan_addresses() -> list[str]:
     return found
 
 
-# How often the backup schedule wakes up to see whether one is due. Shorter than
-# the interval itself, so a server started mid-afternoon does not wait a full day
-# to notice that yesterday's backup never happened.
+# How often the housekeeping tick wakes up. Shorter than the backup interval
+# itself, so a server started mid-afternoon does not wait a full day to notice
+# that yesterday's backup never happened.
 BACKUP_TICK_SECONDS = 900
 
 
-async def backup_schedule() -> None:
-    """Take a backup whenever the newest one is older than the interval.
+async def housekeeping() -> None:
+    """The backup schedule and the notification sweep, on one timer.
 
     A timer rather than a fixed hour: the office PC is not on overnight, so
     "every night at 2am" would mean never. This asks the same question every
     fifteen minutes and acts the first time the answer is yes, which on a
     machine switched on at nine gives a backup shortly after nine.
+
+    Both jobs go to a worker thread. Copying 1.2 GB takes seconds and sweeping
+    the stock table takes rather less, but neither belongs on the event loop —
+    doing them there would stop the office working for exactly as long as they
+    run. Each is suppressed separately, so a sweep that throws cannot stop the
+    backup that follows it, or the other way round.
     """
     while True:
         await asyncio.sleep(BACKUP_TICK_SECONDS)
-        # On a worker thread: copying 1.2 GB takes seconds, and doing it on the
-        # event loop would stop the office working for exactly that long.
         with suppress(Exception):
             await asyncio.to_thread(maintenance.run_scheduled_backup)
+        with suppress(Exception):
+            await asyncio.to_thread(alerts.sweep)
 
 
 @asynccontextmanager
@@ -93,16 +100,29 @@ async def lifespan(app: FastAPI):
         print(f"  Backups  : discarded {len(tidied['swept'])} unfinished "
               f"({', '.join(tidied['swept'])})")
 
-    schedule = None
     if config.BACKUP_EVERY_HOURS:
         print(f"  Backups  : every {config.BACKUP_EVERY_HOURS}h, "
               f"kept {config.BACKUP_KEEP_DAYS} days, in {config.BACKUP_DIR}")
         # The first one is taken here rather than after a tick, so a machine
         # that is switched on for an hour a day still gets its backup.
         await asyncio.to_thread(maintenance.run_scheduled_backup)
-        schedule = asyncio.create_task(backup_schedule())
     else:
         print("  Backups  : automatic backups are off (IMS_BACKUP_HOURS=0)")
+
+    # Swept at startup as well as on the tick, for the same reason the backup
+    # is: a machine switched on for an hour a day would otherwise never reach
+    # the first tick, and the bell would be empty on exactly the days somebody
+    # most needs it.
+    with suppress(Exception):
+        counts = await asyncio.to_thread(alerts.sweep)
+        if counts["opened"] or counts["closed"]:
+            print(f"  Alerts   : opened {counts['opened']}, "
+                  f"closed {counts['closed']}")
+
+    # One task for both jobs. It runs whether or not automatic backups are on —
+    # turning those off is a statement about backups, not about whether the
+    # office wants to be told its stock has run out.
+    schedule = asyncio.create_task(housekeeping())
 
     print(flush=True)
     try:
@@ -124,7 +144,8 @@ def create_app() -> FastAPI:
     )
 
     for router in (auth, stock, customers, suppliers, invoices, purchases,
-                   returns, collections, reports, admin, maintenance, archive):
+                   returns, collections, reports, admin, maintenance, archive,
+                   notifications):
         app.include_router(router.router, prefix="/api")
 
     @app.middleware("http")

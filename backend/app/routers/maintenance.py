@@ -16,14 +16,14 @@ import tempfile
 import time
 import zipfile
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from .. import config, db
+from .. import config, db, notifications
 from ..deps import require
 
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
@@ -328,7 +328,25 @@ def run_scheduled_backup() -> dict | None:
         # the maintenance screen keeps showing the real last-backup time, and the
         # next tick tries again.
         print(f"  Backup : scheduled backup failed - {exc}", flush=True)
+        # ...but a line in a console nobody is reading is not how the office
+        # finds out that a fortnight of backups never happened. One alert,
+        # re-raised onto the same row each tick rather than accumulating, and
+        # only for the accounts that could do something about it.
+        with suppress(Exception):
+            notifications.raise_alert(
+                "backup.failed",
+                "The scheduled backup did not run",
+                body=f"{exc} — the last successful backup is unchanged. "
+                     f"Take one by hand from Backup & Database.",
+                severity="error",
+                permission="maintenance:run",
+                entity="backup",
+            )
         return None
+    # Cleared by the first one that works, so the alert answers "are backups
+    # running?" rather than "did one ever fail?".
+    with suppress(Exception):
+        notifications.resolve("backup.failed")
     print(f"  Backup : {result['name']} ({result['size_mb']:,.1f} MB)"
           + (f", removed {len(result['removed'])}" if result["removed"] else ""),
           flush=True)
