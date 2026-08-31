@@ -19,6 +19,10 @@ const connected = el('connected');
 const lede = el('lede');
 const askBar = el('ask-bar');
 const askAgain = el('ask-again');
+const updateBox = el('update');
+const updateLine = el('update-line');
+const updateNote = el('update-note');
+const btnUpdate = el('btn-update');
 const modeHost = el('mode-host');
 const modeClient = el('mode-client');
 const fieldAddress = el('field-address');
@@ -160,6 +164,44 @@ async function start(config) {
   }
 }
 
+/**
+ * Ask the server whether it is publishing anything newer than this app.
+ *
+ * Runs after connecting, because the answer comes from the server that was just
+ * connected to. Silent when there is nothing to say: an update notice is worth
+ * a panel, "you are up to date" is not — the settings screen is where somebody
+ * goes to ask that question, and it answers it there.
+ */
+const megabytes = (bytes) => `${(bytes / 1_048_576).toFixed(1)} MB`;
+
+async function checkUpdate() {
+  const info = await invoke('update_status').catch(() => null);
+  if (!info || !info.available) return false;
+
+  updateLine.textContent = `Version ${info.latest} is available`;
+  updateNote.textContent = `You are on ${info.installed}.`
+    + (info.size ? ` The download is ${megabytes(info.size)}.` : '');
+  updateBox.hidden = false;
+  return true;
+}
+
+async function installUpdate() {
+  btnUpdate.disabled = true;
+  show('working');
+  workingLine.textContent = 'Downloading the update…';
+  workingNote.textContent = 'The app closes when the download finishes so the '
+    + 'installer can replace it. Open it again afterwards.';
+  try {
+    // On success this never returns anything the page will see: the shell
+    // starts the installer and exits, taking this window with it.
+    await invoke('install_update');
+  } catch (error) {
+    show('form');
+    say(String(error));
+    btnUpdate.disabled = false;
+  }
+}
+
 /** The primary button: open it the first time, continue or move it after. */
 async function go() {
   const config = readForm();
@@ -205,6 +247,8 @@ askAgain.addEventListener('change', () => {
   invoke('save_preferences', { askOnOpen: askAgain.checked }).catch(() => {});
 });
 
+btnUpdate.addEventListener('click', () => { installUpdate(); });
+
 btnCancel.addEventListener('click', () => {
   // The server it is waiting on may still come up; this only stops watching, so
   // the address can be corrected while it does.
@@ -233,6 +277,10 @@ for (const input of [inputHost, inputFolder, inputPort]) {
 (async function boot() {
   const config = await invoke('get_config');
 
+  // An update started from the settings screen has no way to be told it failed,
+  // so the shell parks the reason and opens this window to carry it.
+  const parked = await invoke('pending_error').catch(() => null);
+
   setMode(config.mode === 'client' ? 'client' : 'host');
   // Set before anything can submit. `readForm()` carries this value, so leaving
   // it at the markup's unchecked default would let a *failed* connection — the
@@ -254,6 +302,14 @@ for (const input of [inputHost, inputFolder, inputPort]) {
   // question before it can even see the sign-in screen - and then, unless the
   // box at the bottom was ticked to stop it, comes back as the chooser resting
   // on that screen. Same question, asked where the answer is already visible.
+  if (parked) {
+    // Already connected and running behind this window; the only thing missing
+    // was somewhere to put the message.
+    await showChooser(config);
+    say(parked);
+    return;
+  }
+
   if (!config.configured) {
     show('form');
     return;
@@ -261,7 +317,12 @@ for (const input of [inputHost, inputFolder, inputPort]) {
 
   if (!await start(config)) return;
 
-  if (config.askOnOpen === false) {
+  // An update outranks the preference. Somebody who turned the chooser off did
+  // so to stop being asked a question they always answer the same way, not to
+  // stop being told the app is out of date.
+  const updating = await checkUpdate();
+
+  if (config.askOnOpen === false && !updating) {
     await invoke('close_launcher');
   } else {
     await showChooser(config);

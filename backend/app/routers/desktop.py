@@ -11,9 +11,20 @@ these users are all on one local network, with the server in the corner of the
 room, and a release channel that needs the internet would be a release channel
 that stops working on the days the line is down.
 
-Nothing here is privileged: every role reaches Settings, and installing the
-client application grants nothing that signing in does not. The permission
-checks that matter are on the endpoints the app then calls.
+**These two endpoints are the only ones in the system that take no session.**
+That is deliberate, and it is what makes the rest of this file useful:
+
+* the desktop shell checks for a newer version *before* anybody has signed in -
+  it is the sign-in screen it is about to show that may be out of date;
+* a link somebody copies out of Settings and sends to the next counter has to
+  work when it is opened, not fail with a 401 on a machine whose browser has
+  never signed in here;
+* what is behind them is a **program installer**, not business data. It carries
+  no customer records, and anyone who can reach this port can already reach the
+  sign-in page and could ask a colleague for the file anyway.
+
+Everything the installed application then does is authenticated exactly as the
+browser is. Installing the client grants nothing that signing in does not.
 """
 
 from __future__ import annotations
@@ -22,11 +33,10 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from .. import config
-from ..deps import current_user
 
 router = APIRouter(prefix="/desktop", tags=["desktop"])
 
@@ -89,7 +99,7 @@ def _describe(path: Path) -> dict:
 
 
 @router.get("")
-def desktop_release(_user: dict = Depends(current_user)) -> dict:
+def desktop_release() -> dict:
     """What there is to download, if anything.
 
     Answers rather than 404s when no installer has been published, because the
@@ -108,7 +118,7 @@ def desktop_release(_user: dict = Depends(current_user)) -> dict:
 # missing installer is reported in the page rather than failing silently in the
 # downloads tray.
 @router.api_route("/download", methods=["GET", "HEAD"])
-def download_installer(_user: dict = Depends(current_user)) -> FileResponse:
+def download_installer() -> FileResponse:
     path = _installer()
     if path is None:
         raise HTTPException(404, "No desktop installer has been published on this server.")

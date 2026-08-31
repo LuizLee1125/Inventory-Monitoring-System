@@ -9,7 +9,7 @@
 // is appearance, the desktop app, and what this installation is.
 
 import { api } from '../api.js';
-import { dateTime, el, field, input, reportError, toast } from '../ui.js';
+import { clear, dateTime, el, field, input, reportError, toast } from '../ui.js';
 import { inDesktopApp, page, session, setTitle } from '../app.js';
 import { THEMES, currentTheme, effectiveTheme, setTheme } from '../theme.js';
 
@@ -367,6 +367,137 @@ function desktopGroup(release) {
   ]));
 }
 
+/* -------------------------------------------------- version and updates -- */
+
+/* Shaped after "Version & updates" in NTC-TMS-Tauri: the installed version and
+   a Check button on one line, and under a rule, one of five states. What is
+   underneath is different, because the release channel is. That project asks
+   cloud storage for a signed manifest; this one asks the office server what
+   installer it is publishing, because that is where the installer is and
+   because the answer has to arrive on a day the internet does not. */
+
+/** The running application's version, which the shell puts on the URL. */
+const appVersion = () => new URLSearchParams(window.location.search).get('v');
+
+const versionParts = (text) => String(text || '')
+  .replace(/^v/, '').split(/[.\-+]/).map((n) => Number.parseInt(n, 10) || 0);
+
+/** `0.10.0` is newer than `0.4.0`; a string compare says the opposite. */
+function isNewer(candidate, current) {
+  const [a, b] = [versionParts(candidate), versionParts(current)];
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return false;
+}
+
+function versionGroup(release) {
+  const inApp = inDesktopApp();
+
+  // In the app, the version that matters is the one that is running; in a
+  // browser there is no such thing, and the server's is the honest answer.
+  const installed = (inApp && appVersion()) || session.meta?.version || null;
+  const state = el('div', { class: 'upd-state' });
+
+  const check = el('button', {
+    class: 'btn', type: 'button', style: '--dl-ico:var(--icon-refresh)',
+  }, [el('span', { class: 'ico', 'aria-hidden': 'true' }), 'Check for updates']);
+
+  /** One of five: checking, available, up to date, nothing published, failed. */
+  function paint(kind, latest, detail) {
+    clear(state);
+    state.className = `upd-state ${kind}`;
+
+    if (kind === 'checking') {
+      state.append(el('p', { class: 'upd-line', text: 'Checking…' }));
+      return;
+    }
+    if (kind === 'error') {
+      state.append(
+        el('p', { class: 'upd-line', text: 'Update check failed' }),
+        el('p', { class: 'upd-note', text: detail }),
+      );
+      return;
+    }
+    if (kind === 'none') {
+      state.append(el('p', { class: 'upd-note', text: detail }));
+      return;
+    }
+    if (kind === 'current') {
+      state.append(el('p', { class: 'upd-line', text: 'You are on the latest version.' }));
+      if (detail) state.append(el('p', { class: 'upd-note', text: detail }));
+      return;
+    }
+
+    // Available.
+    state.append(
+      el('p', { class: 'upd-line', text: `Version ${latest} is available` }),
+      el('p', {
+        class: 'upd-note',
+        text: inApp
+          ? 'The app closes while the installer runs, and everything carries on '
+            + 'where it was when you open it again.'
+          : 'Download it and run it on the PC you want to update. The browser '
+            + 'you are reading this in is already current — it is served by the '
+            + 'server, so it has nothing to install.',
+      }),
+      el('div', { class: 'dl-actions' }, [
+        inApp
+          ? el('button', {
+            class: 'btn primary', type: 'button',
+            style: '--dl-ico:var(--icon-download)',
+            // No IPC from this page by design, so the request travels as a
+            // navigation the shell recognises and answers itself. It never
+            // reaches the server, and the page does not move.
+            onClick: () => window.location.assign(`${window.location.origin}/__ims-update`),
+          }, [el('span', { class: 'ico', 'aria-hidden': 'true' }), 'Install now'])
+          : el('a', {
+            class: 'btn primary', style: '--dl-ico:var(--icon-download)',
+            href: '/api/desktop/download', download: release?.filename || '',
+          }, [el('span', { class: 'ico', 'aria-hidden': 'true' }), 'Download installer']),
+      ]),
+    );
+  }
+
+  function settle(latest, available) {
+    if (!available) {
+      paint('none', null,
+        'No installer has been published on this server yet, so there is '
+        + 'nothing to compare against.');
+    } else if (!installed) {
+      paint('none', null, `The server is publishing version ${latest}.`);
+    } else if (isNewer(latest, installed)) {
+      paint('available', latest);
+    } else {
+      paint('current', null, `The server is publishing ${latest}.`);
+    }
+  }
+
+  check.addEventListener('click', async () => {
+    check.disabled = true;
+    paint('checking');
+    try {
+      const fresh = await api.get('/desktop');
+      settle(fresh?.version, fresh?.available);
+    } catch (error) {
+      paint('error', null, error?.detail || String(error?.message || error));
+    } finally {
+      check.disabled = false;
+    }
+  });
+
+  settle(release?.version, release?.available);
+
+  return group('Version & updates', [
+    row(inApp ? 'Installed version' : 'Server version',
+      inApp
+        ? 'The application running on this PC.'
+        : 'The browser has nothing of its own to update — this is the server.',
+      value(installed ? `v${installed}` : 'Unknown', 'mono')),
+    el('div', { class: 'set-stack' }, [state, el('div', { class: 'dl-actions' }, [check])]),
+  ]);
+}
+
 /* -------------------------------------------------------------- system -- */
 
 function systemGroup() {
@@ -374,7 +505,9 @@ function systemGroup() {
   return group('System', [
     row('Company', 'Set with IMS_COMPANY on the server.', value(meta.company)),
     row('Application', '', value(meta.app)),
-    row('Version', '', value(meta.version ? `v${meta.version}` : '', 'mono dim')),
+    // The version has its own group now, with the updater under it. Repeating
+    // it here would be two places to read the same number from, and they would
+    // eventually disagree about which one people trust.
     row('Roles defined', 'Carried over from the DOS access menus.',
       value(`${Object.keys(meta.roles || {}).length}`, 'dim')),
   ]);
@@ -404,7 +537,8 @@ export async function render(container) {
     el('div', { class: 'settings-grid' }, [
       el('div', { class: 'set-col' }, [accountGroup(me), passwordGroup()]),
       el('div', { class: 'set-col' }, [
-        appearanceGroup(), desktopGroup(release), systemGroup(),
+        appearanceGroup(), desktopGroup(release), versionGroup(release),
+        systemGroup(),
       ]),
     ]),
   );

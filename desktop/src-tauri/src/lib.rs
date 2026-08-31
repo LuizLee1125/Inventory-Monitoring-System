@@ -34,6 +34,12 @@ use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 /// traceback, which is the thing anybody actually needs to read.
 const LOG_LINES: usize = 240;
 
+/// The one path the application window may ask for and never reach: the
+/// settings screen's "Install now" navigates here, and the shell answers it
+/// instead of the server. Two underscores and a name nothing else could want,
+/// so it cannot collide with a real screen.
+const UPDATE_PATH: &str = "/__ims-update";
+
 /// How long to wait for a freshly spawned server to answer. Cold starts run the
 /// schema comparison and can take a backup before serving, and a 1.2 GB backup
 /// is about six seconds on this office's machine.
@@ -108,6 +114,10 @@ pub struct Server {
     /// from the chooser knows it has to close and reopen rather than raise what
     /// is already there.
     url: Mutex<Option<String>>,
+    /// Set when something went wrong somewhere with no screen to say so on -
+    /// an update started from the settings page, which has no way to be told.
+    /// The launcher reads and clears it when it next opens.
+    error: Mutex<Option<String>>,
     /// New for every launch of the app, and carried on the window's URL. The
     /// page uses it to tell "the app was just opened" from "somebody reloaded",
     /// which is what makes signing out on close possible without the shell
@@ -126,6 +136,7 @@ impl Default for Server {
             child: Mutex::new(None),
             log: Arc::new(Mutex::new(VecDeque::new())),
             url: Mutex::new(None),
+            error: Mutex::new(None),
             boot_id,
         }
     }
@@ -424,6 +435,162 @@ fn wait_for_server(port: u16, child: &mut Child, log: &Arc<Mutex<VecDeque<String
     ))
 }
 
+// --------------------------------------------------------------------- updating
+
+/// What the server is offering against what is running.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    /// The version of this application, from Cargo.toml by way of the bundle.
+    pub installed: String,
+    /// The version of the installer published on the server, if there is one.
+    pub latest: Option<String>,
+    pub filename: Option<String>,
+    pub size: Option<u64>,
+    /// True only when `latest` is a strictly higher version than `installed`.
+    pub available: bool,
+    /// Empty when the check succeeded; the reason when it did not.
+    pub error: Option<String>,
+}
+
+/// `0.4.0` against `0.10.0` is the whole reason this is not a string compare:
+/// `"0.10.0" < "0.4.0"` alphabetically, and an office that never sees a
+/// two-digit minor would find that out on the day it does. Missing or
+/// non-numeric parts count as zero, so `0.4` and `0.4.0` are the same version.
+fn version_parts(text: &str) -> Vec<u64> {
+    text.trim()
+        .trim_start_matches('v')
+        .split(['.', '-', '+'])
+        .map(|part| part.parse::<u64>().unwrap_or(0))
+        .collect()
+}
+
+fn is_newer(candidate: &str, current: &str) -> bool {
+    let (a, b) = (version_parts(candidate), version_parts(current));
+    for index in 0..a.len().max(b.len()) {
+        let (left, right) = (a.get(index).copied().unwrap_or(0),
+                             b.get(index).copied().unwrap_or(0));
+        if left != right {
+            return left > right;
+        }
+    }
+    false
+}
+
+/// Ask the connected server what it is publishing.
+///
+/// `/api/desktop` takes no session (see `backend/app/routers/desktop.py`), which
+/// is what lets this run before anybody has signed in - the sign-in screen is
+/// exactly the thing that might be out of date.
+fn check_for_update(app: &AppHandle) -> UpdateInfo {
+    let installed = app.package_info().version.to_string();
+    let base = app
+        .state::<Server>()
+        .url
+        .lock()
+        .ok()
+        .and_then(|held| held.clone());
+
+    let mut info = UpdateInfo { installed: installed.clone(), ..Default::default() };
+
+    let Some(base) = base else {
+        info.error = Some("Not connected to a server yet.".into());
+        return info;
+    };
+
+    let body = match ureq::get(&format!("{base}/api/desktop"))
+        .timeout(Duration::from_secs(8))
+        .call()
+    {
+        Ok(response) => response.into_string().unwrap_or_default(),
+        Err(err) => {
+            info.error = Some(format!("Could not ask the server: {err}"));
+            return info;
+        }
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(value) => value,
+        Err(err) => {
+            info.error = Some(format!("The server's answer was not readable: {err}"));
+            return info;
+        }
+    };
+
+    if !parsed.get("available").and_then(|v| v.as_bool()).unwrap_or(false) {
+        // Not an error: a server with no installer published is an ordinary
+        // state, and the screen says so in its own words.
+        return info;
+    }
+
+    let latest = parsed.get("version").and_then(|v| v.as_str()).map(String::from);
+    info.available = latest.as_deref().map(|v| is_newer(v, &installed)).unwrap_or(false);
+    info.filename = parsed.get("filename").and_then(|v| v.as_str()).map(String::from);
+    info.size = parsed.get("size").and_then(serde_json::Value::as_u64);
+    info.latest = latest;
+    info
+}
+
+/// Fetch the installer and hand over to it.
+///
+/// There is no silent in-place update and no signing key. `tauri-plugin-updater`
+/// wants a signed manifest on an endpoint fixed at build time; this system's
+/// release channel is whichever office PC happens to be hosting, which is not
+/// known until the app connects, and a minisign keypair would put a permanent
+/// build-time secret in the way of anybody rebuilding the app. The threat model
+/// does not ask for one either: the file comes from the same server that is
+/// already serving every screen in the application, so a server that could hand
+/// over a bad installer could hand over a bad application first.
+fn run_installer(app: &AppHandle) -> Result<(), String> {
+    let info = check_for_update(app);
+    if let Some(error) = info.error {
+        return Err(error);
+    }
+    if !info.available {
+        return Err("There is nothing newer on the server.".into());
+    }
+    let base = app
+        .state::<Server>()
+        .url
+        .lock()
+        .ok()
+        .and_then(|held| held.clone())
+        .ok_or("Not connected to a server.")?;
+
+    let name = info.filename.unwrap_or_else(|| "marina-ims-setup.exe".into());
+    let target = std::env::temp_dir().join(&name);
+
+    let response = ureq::get(&format!("{base}/api/desktop/download"))
+        .timeout(Duration::from_secs(600))
+        .call()
+        .map_err(|e| format!("Could not download the update: {e}"))?;
+
+    // Written beside its final name and renamed at the end, for the reason the
+    // backups are: a download the power cut off halfway through must not be
+    // left looking like an installer somebody can run.
+    let part = target.with_extension("part");
+    {
+        let mut file = std::fs::File::create(&part)
+            .map_err(|e| format!("Could not write to the temporary folder: {e}"))?;
+        std::io::copy(&mut response.into_reader(), &mut file)
+            .map_err(|e| format!("The download did not finish: {e}"))?;
+    }
+    let _ = std::fs::remove_file(&target);
+    std::fs::rename(&part, &target)
+        .map_err(|e| format!("Could not finish the download: {e}"))?;
+
+    Command::new(&target)
+        .spawn()
+        .map_err(|e| format!("Could not start the installer: {e}"))?;
+
+    // The installer cannot replace a running executable, so this has to go.
+    // Killing the server first: it is this process's child, and leaving it
+    // holding the port through an upgrade is the failure start.bat warns about.
+    app.state::<Server>().kill();
+    app.exit(0);
+    Ok(())
+}
+
 // ---------------------------------------------------------------------- windows
 
 fn open_main_window(app: &AppHandle, url: &str) -> Result<(), String> {
@@ -451,11 +618,44 @@ fn open_main_window(app: &AppHandle, url: &str) -> Result<(), String> {
     // and it costs nothing - the alternative was overriding the user agent,
     // which means hardcoding a browser version that goes stale. `boot` rides
     // along so the page can tell this launch from a reload.
-    let parsed = format!("{url}/?desktop=1&boot={}", server.boot_id)
-        .parse()
-        .map_err(|_| format!("{url} is not an address the app can open"))?;
+    // `v` is the running application's own version. The settings screen shows
+    // it and compares it against what the server publishes, and it has to get
+    // there without IPC: this window is a remote page and is given none.
+    let parsed = format!(
+        "{url}/?desktop=1&boot={}&v={}",
+        server.boot_id,
+        app.package_info().version
+    )
+    .parse()
+    .map_err(|_| format!("{url} is not an address the app can open"))?;
 
+    // How the settings screen starts an update without being given IPC.
+    //
+    // That window loads a remote page over plain HTTP and has no Tauri commands
+    // available to it, deliberately - see capabilities/default.json. But it can
+    // *navigate*, and navigation is something the shell already sees. So the
+    // page asks for an update by trying to go to one fixed, unparameterised
+    // path; the shell recognises it, refuses the navigation so nothing actually
+    // moves, and does the work. One-way, no arguments, nothing else reachable.
+    let nav = app.clone();
     WebviewWindowBuilder::new(app, "main", WebviewUrl::External(parsed))
+        .on_navigation(move |url| {
+            if url.path() != UPDATE_PATH {
+                return true;
+            }
+            let handle = nav.clone();
+            std::thread::spawn(move || {
+                if let Err(message) = run_installer(&handle) {
+                    if let Ok(mut slot) = handle.state::<Server>().error.lock() {
+                        *slot = Some(message);
+                    }
+                    // Nothing on the settings screen can be told, so the
+                    // launcher is opened to carry the message instead.
+                    let _ = open_setup_window(&handle);
+                }
+            });
+            false
+        })
         .title("Marina Trading - Inventory Monitoring System")
         .inner_size(1440.0, 900.0)
         .min_inner_size(900.0, 600.0)
@@ -592,6 +792,30 @@ fn present_chooser(app: AppHandle) -> Result<(), String> {
     let _ = setup.center();
     let _ = setup.show();
     setup.set_focus().map_err(|e| e.to_string())
+}
+
+/// Anything that failed with no screen to report it on. Read once, then gone.
+#[tauri::command]
+fn pending_error(server: State<'_, Server>) -> Option<String> {
+    server.error.lock().ok().and_then(|mut slot| slot.take())
+}
+
+#[tauri::command]
+async fn update_status(app: AppHandle) -> UpdateInfo {
+    tauri::async_runtime::spawn_blocking(move || check_for_update(&app))
+        .await
+        .unwrap_or_else(|e| UpdateInfo {
+            error: Some(format!("The update check failed: {e}")),
+            ..Default::default()
+        })
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || run_installer(&handle))
+        .await
+        .map_err(|e| format!("The update task failed: {e}"))?
 }
 
 /// The "don't ask again" box, saved the moment it is ticked.
@@ -741,7 +965,10 @@ pub fn run() {
             launch,
             close_launcher,
             present_chooser,
-            save_preferences
+            save_preferences,
+            update_status,
+            install_update,
+            pending_error
         ])
         .setup(|app| {
             let handle = app.handle().clone();

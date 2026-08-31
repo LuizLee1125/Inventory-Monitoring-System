@@ -390,7 +390,65 @@ If the installed app is set to host and `start.bat` is already running, the app
 closing the app does not always stop the server: it only stops the one it
 started itself.
 
-To produce an installer for the office:
+### Updates
+
+**Settings → Version & updates.** It shows the version running and, under it,
+one of five answers: checking, you are on the latest, a version is available,
+nothing published on this server yet, or the check failed and why.
+
+In the desktop app an available version comes with **Install now** — it
+downloads the installer, closes the app, and runs it. Open the app again
+afterwards and it is the new one. The app also checks on every open and puts the
+same offer on the chooser, so somebody who never visits Settings still finds out;
+that notice appears even for people who turned the chooser off, because turning
+off a question you always answer the same way is not the same as asking not to
+be told the app is out of date.
+
+In a browser the card shows the **server's** version instead, and offers the
+installer as a download. A browser has nothing of its own to update — it is
+served by the server, so refreshing is the whole of it.
+
+The check asks **this server**, not the internet: `GET /api/desktop` reports
+what installer is published in `releases\`, and the app compares that against
+its own version. It therefore works with the office line down, which is when a
+LAN system most needs to.
+
+There is no signed auto-update feed. `NTC-TMS-Tauri` has one because its users
+are spread across the country and its release endpoint is fixed; here the
+release channel is whichever office PC is hosting, which is not known until the
+app connects, and a signing key would put a permanent secret in the way of
+anybody rebuilding. The reasoning is in
+[system_architecture.md](system_architecture.md).
+
+### Releasing a new version
+
+Two numbers, and both have to move:
+
+| File | Versions |
+| --- | --- |
+| `backend/app/__init__.py` | the server |
+| `desktop/src-tauri/Cargo.toml` | the desktop application and its installer |
+
+`tauri.conf.json` has no `version` of its own on purpose — it takes Cargo's, so
+the shell and its bundle can never disagree. Then:
+
+```bash
+cd desktop && npm run build
+```
+
+Copy the resulting `-setup.exe` into `releases\`, commit, and tag the **full
+three-part version**:
+
+```bash
+git tag -a v0.4.0 -m "Release version 0.4.0" && git push origin refs/heads/v0.4 v0.4.0
+```
+
+Three parts even when the branch is the two-part series: a tag and a branch
+sharing a name make `git push origin <name>` ambiguous and it refuses.
+
+### Building an installer
+
+To produce one for the office:
 
 ```bash
 cd desktop
@@ -523,6 +581,7 @@ Every account has one, whatever its role: click the initials at the top right an
 | Security | Change your own password. Eight characters or more. You stay signed in on this device. **This is the only place it can be done** — it used to be in the account menu as well, which meant two ways in. The DOS key `9` still works and lands here. |
 | Appearance | **Light**, **Dark**, or **System**, which follows whatever the PC is set to and keeps following it. The choice is remembered in that browser on that PC, not on the account. |
 | Desktop app | Install the [desktop edition](#desktop-edition) on this PC: the file name, the version, its size, the address it comes from, and **Download installer** / **Copy link**. Every account has it, whatever the role. Opened from inside the app itself it says *Installed* and keeps only the link — offering somebody a download of what they are already running is not a useful thing to do. |
+| Version & updates | The version running — the *application's* in the desktop app, the *server's* in a browser — and under it whether anything newer is published, with **Check for updates**. In the app an available version comes with **Install now**, which downloads it, closes the app and runs the installer. See [Updates](#updates). |
 | System | Company, application, version, and how many roles are defined. |
 
 The appearance choice is remembered in that browser, on that PC — not on the account. The

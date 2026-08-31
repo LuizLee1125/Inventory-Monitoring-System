@@ -1092,3 +1092,80 @@ Two details that keep it working:
 Failure is a plain `info` toast, not an error: the address is on screen directly
 above the button and can be selected by hand, so pointing at it beats explaining
 a permissions model.
+
+## Versions, and the updater (v0.4)
+
+### Where the version lives
+
+The application said `1.0.0` while the repository was tagged `v0.4` — two
+numbers for one thing, and the one people could see was the wrong one. There are
+now **two** literals, and a rule about which is which:
+
+| File | What it versions |
+| --- | --- |
+| `backend/app/__init__.py` | the server, and so `/api/meta`, the sign-in footer and the page title |
+| `desktop/src-tauri/Cargo.toml` | the desktop application, and so its bundle and installer file name |
+
+`tauri.conf.json` deliberately has **no `version` key**: with it absent Tauri
+takes the one from `Cargo.toml`, so the shell and the installer it produces
+cannot disagree. `package.json` in both places is dev tooling and is kept in
+step for tidiness only; nothing reads it.
+
+**Releasing** is therefore: bump those two, rebuild, copy the installer into
+`releases/`, commit, and tag `vX.Y.Z`. Tag the full three-part version even when
+the branch is the two-part series — a tag and a branch that share a name make
+every `git push origin <name>` ambiguous, which is how `v0.4` had to become
+`v0.4.0`.
+
+### The two endpoints with no session
+
+`/api/desktop` and `/api/desktop/download` are the only unauthenticated
+endpoints in the system. Three reasons, in order of how much they matter:
+
+1. The shell checks for an update **before anybody signs in** — the sign-in
+   screen is exactly the thing that might be out of date.
+2. A link copied out of Settings and sent to another counter has to work when it
+   is opened, rather than answering 401 in a browser that has never signed in.
+3. What is behind them is a program installer. It holds no customer data, and
+   anyone who can reach the port can already reach the sign-in page.
+
+### The updater, and why it is not `tauri-plugin-updater`
+
+NTC-TMS-Tauri uses the plugin against a signed manifest in Supabase storage.
+Neither half of that transfers:
+
+- **The endpoint is not known at build time.** The release channel here is
+  whichever office PC happens to be hosting, and the app does not learn its
+  address until it connects. The plugin's endpoints are configuration.
+- **A minisign keypair would be a permanent build-time secret.** With
+  `createUpdaterArtifacts` on, a build without the private key *fails* — so
+  every future rebuild, on any machine, would depend on a key file that cannot
+  be committed. That is a large standing cost.
+- **The threat model does not buy anything with it.** The installer comes from
+  the same server that already serves every screen of the application. A server
+  that could hand over a bad installer could hand over a bad application first.
+
+So the shell does it directly: ask `/api/desktop`, compare versions numerically
+(`0.10.0` beats `0.4.0`; a string compare says the reverse), download to a
+`.part` file, rename, run it, kill the server child and exit — an installer
+cannot replace a running executable.
+
+### How the settings page starts an update without IPC
+
+The application window loads a remote page over plain HTTP and is given **no**
+Tauri commands, which is the boundary `capabilities/default.json` exists to
+draw. Widening it for the updater would have exposed *every* app command to that
+page, since app-defined commands are not ACL-gated the way plugin commands are —
+including `launch`, which spawns a Python interpreter from a path in its
+argument.
+
+Instead the page **navigates** to one fixed, unparameterised path,
+`/__ims-update`. `on_navigation` on the window recognises it, returns `false` so
+nothing actually moves, and runs the update. One direction, no arguments, no
+other reachable surface. The page cannot be told the result, so a failure is
+parked in `Server.error` and the launcher window is opened to carry it —
+`pending_error()` reads and clears it.
+
+The page knows its own version because the shell puts it on the URL (`&v=`),
+alongside `desktop=1` and `boot=`. Three query parameters is the entire contract
+between the shell and the page it did not write.

@@ -62,6 +62,10 @@ in the main README; attaching is the better answer where it is available.
    what is connected, or point the PC somewhere else.
 4. The page signs out whatever account the last run left behind, so the sign-in
    screen is always a real one.
+5. The shell asks the server whether it publishes anything newer than the
+   running version. If it does, the chooser carries the offer — and appears even
+   for somebody who turned it off, because that switch was about a question, not
+   about being told the app is out of date.
 
 The chooser is the same window as the launcher, not a second one — a dialog
 should not add a taskbar entry, and re-parenting after build is not something a
@@ -171,3 +175,17 @@ desktop/
 - **Do not reach for `clear_all_browsing_data()`** to do the signing out. It
   takes `localStorage` with it, and `ims.theme` lives there: the app would
   forget light or dark on every launch.
+- **The settings page starts an update by navigating, not by invoking.** It has
+  no IPC, and widening the capability would expose *every* app command to a
+  remote page — app commands are not ACL-gated the way plugin commands are, and
+  `launch` spawns a Python interpreter from a path in its argument. Instead the
+  page navigates to `/__ims-update`; `on_navigation` recognises that one fixed
+  path, returns `false` so the page does not move, and does the work. Keep it
+  unparameterised: the moment the shell reads anything *out* of that URL it
+  becomes an IPC channel with no permission model.
+- **There is no `version` in `tauri.conf.json`.** Tauri takes Cargo's, so the
+  shell and its bundle cannot disagree. Bump `Cargo.toml`, not the JSON.
+- **The updater is not `tauri-plugin-updater`.** Its endpoint is fixed at build
+  time and this one is not known until the app connects, and
+  `createUpdaterArtifacts` makes every future build depend on a signing key that
+  cannot be committed. The reasoning is in `system_architecture.md`.

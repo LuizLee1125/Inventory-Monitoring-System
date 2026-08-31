@@ -35,6 +35,17 @@
   <!-- ---------------------------------------------------------------- form -->
   <section class="state" id="state-form" hidden>
 
+    <!-- Shown whenever the server publishes a newer installer than the version
+         running. Above the connection banner on purpose: it is the one thing on
+         this window that will not still be true tomorrow. -->
+    <div class="update" id="update" hidden>
+      <div class="update-text">
+        <strong id="update-line"></strong>
+        <span id="update-note"></span>
+      </div>
+      <button class="btn primary" id="btn-update" type="button">Install</button>
+    </div>
+
     <!-- Only in chooser mode: the app is already connected and showing the
          login screen behind this, so the question is "carry on, or move". -->
     <p class="connected" id="connected" hidden></p>

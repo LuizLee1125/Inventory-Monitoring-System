@@ -1,6 +1,6 @@
 [package]
 name = "marina-ims-desktop"
-version = "1.0.0"
+version = "0.4.0"
 edition = "2021"
 description = "Desktop shell for the Marina Trading Inventory Monitoring System"
 authors = ["Marina Trading"]
@@ -21,6 +21,12 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Plain HTTP only, deliberately: this talks to one server on the office LAN,
+# over the same http:// the rest of the application uses. Default features
+# would pull a TLS stack in for a connection that never uses one. Downloading
+# an installer is the one thing here that wants a real client rather than the
+# hand-rolled TcpStream probe - it has a body worth streaming to disk.
+ureq = { version = "2", default-features = false }
 
 [profile.release]
 codegen-units = 1

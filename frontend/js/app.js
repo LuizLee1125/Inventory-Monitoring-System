@@ -456,7 +456,6 @@ async function showShell() {
   $('#shell').hidden = false;
 
   $('#brand-company').textContent = session.meta.company;
-  $('#version-tag').textContent = `v${session.meta.version}`;
 
   const who = session.user.full_name || session.user.username;
   $('#avatar-initials').textContent = initials(who);
