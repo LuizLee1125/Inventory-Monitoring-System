@@ -343,7 +343,7 @@ Neither restriction survives:
 
 | Action | What it does |
 | --- | --- |
-| Back up now | Copies the live database using SQLite's own backup API, so the office keeps working. Files land in `database\backups`; the newest 14 are kept. A 1.2 GB database takes about 7 seconds. |
+| Back up now | Copies the live database using SQLite's own backup API, so the office keeps working. On top of the automatic daily one — see [Backups](#backups) for what is kept. A 1.2 GB database takes about 7 seconds. |
 | Run check | Verifies every page and refreshes the query planner's statistics. There are no indexes to rebuild — SQLite maintains its own. Reads the whole file, so allow a minute or two and expect it to slow others down while it runs. |
 | Compact | Reclaims free pages by rewriting the file. Needs as much spare disk as the database occupies; do it out of hours. |
 
@@ -693,6 +693,9 @@ Every setting is an environment variable, so nothing needs editing to move betwe
 | `IMS_FRONTEND` | `frontend/` | Folder the browser application is served from |
 | `IMS_LEGACY_DIR` | `legacy/` | Where `migrate.py` looks for `.DBF` files |
 | `IMS_PLAINTEXT_DIR` | `database/plaintext/` | Where `dump_db.py` writes the text dump |
+| `IMS_BACKUP_DAYS` | `7` | How long a backup is kept |
+| `IMS_BACKUP_KEEP_MIN` | `3` | Newest backups kept regardless of age |
+| `IMS_BACKUP_HOURS` | `24` | Hours between automatic backups; `0` turns them off |
 | `IMS_HOST` / `IMS_PORT` | `0.0.0.0` / `8080` | Bind address and port |
 | `IMS_COMPANY` | `Marina Trading` | Name shown in the header and page titles |
 | `IMS_SESSION_HOURS` | `12` | How long a sign-in lasts |
@@ -702,14 +705,40 @@ Every setting is an environment variable, so nothing needs editing to move betwe
 
 ## Backups
 
-The database is a single file. Stop the server (or use SQLite's online backup) and copy:
+**The server backs itself up.** While it is running it takes a copy every 24 hours, and it takes one
+at startup if the newest is already older than that — so a PC switched on for an hour a day still
+gets its daily backup. Copies land in `database\backups` as `ims-YYYYMMDD-HHMMSS-auto.sqlite`. The
+button on **Backup & Database** takes one on top of that, without the `-auto`, so the list shows at a
+glance whether the week filled itself or was filled by hand.
+
+They are taken with SQLite's own online backup API, which copies a live database safely — nobody has
+to be out of the system, which is the one thing the DOS Monday-to-Saturday floppy rotation always
+demanded.
+
+### What is kept
+
+| Rule | Value | Environment variable |
+| --- | --- | --- |
+| Backups older than this are deleted | 7 days | `IMS_BACKUP_DAYS` |
+| ...but never fewer than this many survive | 3 | `IMS_BACKUP_KEEP_MIN` |
+| Hours between automatic backups (`0` turns them off) | 24 | `IMS_BACKUP_HOURS` |
+
+The floor is the important half. Age alone would mean an office that closed for a fortnight came back
+to a backup folder that had tidied itself empty — so the three most recent always survive, however
+old they are.
+
+**Budget the disk.** Seven daily copies of a 1.2 GB database is roughly 8.5 GB. The maintenance
+screen shows the running total and the free space beside it; if that is tight, lower `IMS_BACKUP_DAYS`
+rather than switching the schedule off.
+
+### This is not off-site
+
+A backup on the same disk does not survive that disk failing. Copy them somewhere else as well — a
+scheduled task is enough:
 
 ```bash
-copy database\ims.sqlite "\\server\backups\ims-%DATE%.sqlite"
+robocopy database\backups "\\server\ims-backups" /MIR
 ```
-
-The legacy system rotated backups Monday to Saturday. Keeping that habit is a good idea; a scheduled
-task running the line above is enough.
 
 ---
 

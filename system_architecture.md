@@ -272,6 +272,43 @@ account. That is a choice, not an oversight — it is a property of the screen
 someone is sitting at, and the same clerk on the warehouse terminal and the
 office PC will want different answers.
 
+## Backups
+
+Retention is by **age with a floor**, not by count. It used to keep the newest
+14 files whatever their dates, which answers the wrong question: what an office
+needs to know is "how far back can I go", and a count only answers that if you
+also know how often backups were taken.
+
+- `BACKUP_KEEP_DAYS` (7) — anything older is deleted.
+- `BACKUP_KEEP_MIN` (3) — **the floor, and the important half.** Age alone would
+  mean an office that closed for a fortnight came back to a folder that had
+  tidied itself empty. That is the one state a backup system must never reach,
+  and it is the state a pure age rule reaches on its own.
+- `BACKUP_EVERY_HOURS` (24) — `0` disables the schedule and leaves the button.
+
+A retention window only means something if the window is full, so backups are
+now **taken on a schedule** rather than only when somebody presses the button.
+Two decisions there:
+
+- **A timer, not a fixed hour.** "Every night at 2am" means never on a PC that
+  is switched off overnight. `backup_is_due()` asks whether the newest backup is
+  older than the interval, the schedule asks that every 15 minutes, and the
+  lifespan asks it once at startup — so a machine switched on at nine gets its
+  backup shortly after nine.
+- **On a worker thread.** `asyncio.to_thread`, because copying 1.2 GB takes
+  several seconds and doing it on the event loop would stop the office working
+  for exactly as long as the backup exists to avoid. `db.get_connection()` is
+  thread-local, so the worker opens its own connection and nothing is shared.
+
+A scheduled backup that fails is logged and skipped; the next tick tries again.
+It must never take the server down, and the maintenance screen goes on showing
+the real last-backup time rather than a comforting one.
+
+Automatic copies are named `ims-…-auto.sqlite`. The suffix is the whole
+mechanism behind the "By" column on the maintenance screen — there is no
+database table of backups, and the filesystem already knows. `dump_db.py`
+globs `ims-*.sqlite`, so it still finds them.
+
 ## The sign-in screen
 
 Two panels: the name of the place on the left, the way in on the right. It was a

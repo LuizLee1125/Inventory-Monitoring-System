@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -46,6 +47,28 @@ def lan_addresses() -> list[str]:
     return found
 
 
+# How often the backup schedule wakes up to see whether one is due. Shorter than
+# the interval itself, so a server started mid-afternoon does not wait a full day
+# to notice that yesterday's backup never happened.
+BACKUP_TICK_SECONDS = 900
+
+
+async def backup_schedule() -> None:
+    """Take a backup whenever the newest one is older than the interval.
+
+    A timer rather than a fixed hour: the office PC is not on overnight, so
+    "every night at 2am" would mean never. This asks the same question every
+    fifteen minutes and acts the first time the answer is yes, which on a
+    machine switched on at nine gives a backup shortly after nine.
+    """
+    while True:
+        await asyncio.sleep(BACKUP_TICK_SECONDS)
+        # On a worker thread: copying 1.2 GB takes seconds, and doing it on the
+        # event loop would stop the office working for exactly that long.
+        with suppress(Exception):
+            await asyncio.to_thread(maintenance.run_scheduled_backup)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     added = db.init_db()
@@ -59,8 +82,26 @@ async def lifespan(app: FastAPI):
     print(f"  Local    : http://localhost:{config.PORT}")
     for address in lan_addresses():
         print(f"  Network  : http://{address}:{config.PORT}")
+
+    schedule = None
+    if config.BACKUP_EVERY_HOURS:
+        print(f"  Backups  : every {config.BACKUP_EVERY_HOURS}h, "
+              f"kept {config.BACKUP_KEEP_DAYS} days, in {config.BACKUP_DIR}")
+        # The first one is taken here rather than after a tick, so a machine
+        # that is switched on for an hour a day still gets its backup.
+        await asyncio.to_thread(maintenance.run_scheduled_backup)
+        schedule = asyncio.create_task(backup_schedule())
+    else:
+        print("  Backups  : automatic backups are off (IMS_BACKUP_HOURS=0)")
+
     print(flush=True)
-    yield
+    try:
+        yield
+    finally:
+        if schedule:
+            schedule.cancel()
+            with suppress(asyncio.CancelledError):
+                await schedule
 
 
 def create_app() -> FastAPI:

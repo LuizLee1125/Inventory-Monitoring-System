@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,27 +22,142 @@ from ..deps import require
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 
 BACKUP_DIR = config.BACKUP_DIR
-KEEP_BACKUPS = 14
+
+
+class BackupSpaceError(RuntimeError):
+    """Not enough room on disk to hold another copy of the database."""
 
 
 def _disk_free_mb(path: Path) -> float:
     return shutil.disk_usage(path).free / 1_048_576
 
 
-def _backup_rows() -> list[dict]:
+def _backup_files() -> list[Path]:
+    """Newest first. The timestamp is in the name, so the sort is the order."""
     if not BACKUP_DIR.exists():
         return []
+    return sorted(BACKUP_DIR.glob("ims-*.sqlite"), reverse=True)
+
+
+def _backup_rows() -> list[dict]:
+    now = datetime.now().astimezone()
     rows = []
-    for path in sorted(BACKUP_DIR.glob("ims-*.sqlite"), reverse=True):
+    for path in _backup_files():
         stat = path.stat()
+        # Local time, because a backup is filed by the day the office took it.
+        taken = datetime.fromtimestamp(stat.st_mtime).astimezone()
         rows.append({
             "name": path.name,
             "size_mb": round(stat.st_size / 1_048_576, 1),
-            # Local time, because a backup is filed by the day the office took it.
-            "created_at": datetime.fromtimestamp(
-                stat.st_mtime).astimezone().isoformat(timespec="seconds"),
+            "created_at": taken.isoformat(timespec="seconds"),
+            "age_days": round((now - taken).total_seconds() / 86400, 1),
+            # The scheduled ones say so in the filename, so the screen can show
+            # at a glance whether the week filled itself or was filled by hand.
+            "automatic": path.stem.endswith("-auto"),
         })
     return rows
+
+
+def prune_backups() -> list[str]:
+    """Delete backups older than the retention window.
+
+    Age decides, but never past the floor: `BACKUP_KEEP_MIN` most recent files
+    survive however old they are. An office that closes for a fortnight must not
+    come back to a backup folder that has tidied itself empty.
+    """
+    files = _backup_files()
+    # Epoch seconds on both sides: st_mtime is one, so the comparison never has
+    # to care which timezone the office is in or whether it just changed.
+    cutoff = time.time() - config.BACKUP_KEEP_DAYS * 86400
+    keep = {path for path in files if path.stat().st_mtime >= cutoff}
+    keep.update(files[:config.BACKUP_KEEP_MIN])
+
+    removed = []
+    for path in files:
+        if path not in keep:
+            removed.append(path.name)
+            path.unlink()
+    return removed
+
+
+def take_backup(username: str, *, automatic: bool = False) -> dict:
+    """Copy the database, then prune. Used by the button and by the schedule.
+
+    SQLite's own backup API copies a live database safely, which the DOS system
+    could never do - back-ups there meant everybody out of the files first.
+    """
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+    size_mb = config.DB_PATH.stat().st_size / 1_048_576
+    free_mb = _disk_free_mb(BACKUP_DIR)
+    if free_mb < size_mb * 1.1:
+        raise BackupSpaceError(
+            f"Not enough disk space: the database is {size_mb:,.0f} MB and only "
+            f"{free_mb:,.0f} MB is free. Delete some older backups first.")
+
+    stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    target = BACKUP_DIR / f"ims-{stamp}{'-auto' if automatic else ''}.sqlite"
+
+    # A fresh connection rather than the thread-local one: this runs on a worker
+    # thread when the schedule calls it, and `db.get_connection()` would hand
+    # that thread a connection of its own anyway.
+    source = db.get_connection()
+    destination = sqlite3.connect(target)
+    try:
+        source.backup(destination)
+    finally:
+        destination.close()
+
+    removed = prune_backups()
+    written_mb = round(target.stat().st_size / 1_048_576, 1)
+
+    with db.transaction() as conn:
+        db.audit(conn, username, "backup", "database", target.name,
+                 f"{written_mb:,.1f} MB"
+                 + (f", removed {len(removed)} past "
+                    f"{config.BACKUP_KEEP_DAYS} days" if removed else ""))
+
+    return {
+        "name": target.name,
+        "size_mb": written_mb,
+        "automatic": automatic,
+        "removed": removed,
+        "backups": _backup_rows(),
+    }
+
+
+def backup_is_due() -> bool:
+    """True when the newest backup is older than the interval, or there is none."""
+    if not config.BACKUP_EVERY_HOURS:
+        return False
+    files = _backup_files()
+    if not files:
+        return True
+    age_hours = (time.time() - files[0].stat().st_mtime) / 3600
+    return age_hours >= config.BACKUP_EVERY_HOURS
+
+
+def run_scheduled_backup() -> dict | None:
+    """One tick of the schedule. Returns what it took, or None if nothing was due.
+
+    Runs on a worker thread - copying 1.2 GB takes several seconds, and doing it
+    on the event loop would stop the office from working for exactly as long as
+    the backup is meant to avoid.
+    """
+    if not backup_is_due():
+        return None
+    try:
+        result = take_backup("SYSTEM", automatic=True)
+    except (BackupSpaceError, OSError, sqlite3.Error) as exc:
+        # A failed backup must never take the server down with it. It is logged,
+        # the maintenance screen keeps showing the real last-backup time, and the
+        # next tick tries again.
+        print(f"  Backup : scheduled backup failed - {exc}", flush=True)
+        return None
+    print(f"  Backup : {result['name']} ({result['size_mb']:,.1f} MB)"
+          + (f", removed {len(result['removed'])}" if result["removed"] else ""),
+          flush=True)
+    return result
 
 
 @router.get("/status")
@@ -66,54 +182,36 @@ def status(_user: dict = Depends(require("maintenance:run"))) -> dict:
         },
         "backups": backups,
         "last_backup": backups[0] if backups else None,
+        "backup_policy": {
+            "keep_days": config.BACKUP_KEEP_DAYS,
+            "keep_min": config.BACKUP_KEEP_MIN,
+            "every_hours": config.BACKUP_EVERY_HOURS,
+            "next_due": _next_due(backups),
+            "total_mb": round(sum(row["size_mb"] for row in backups), 1),
+        },
         "sessions_open": db.scalar(
             "SELECT COUNT(*) FROM sessions WHERE expires_at > ?", (db.now(),), 0),
     }
 
 
+def _next_due(backups: list[dict]) -> str | None:
+    """When the schedule will next take one, or None if it is switched off."""
+    if not config.BACKUP_EVERY_HOURS:
+        return None
+    if not backups:
+        return datetime.now().astimezone().isoformat(timespec="seconds")
+    latest = datetime.fromisoformat(backups[0]["created_at"])
+    return (latest + timedelta(hours=config.BACKUP_EVERY_HOURS)).isoformat(
+        timespec="seconds")
+
+
 @router.post("/backup")
 def backup(user: dict = Depends(require("maintenance:run"))) -> dict:
-    """Take a consistent copy of the database while people keep working.
-
-    SQLite's own backup API copies a live database safely, which the DOS system
-    could never do - back-ups there meant everybody out of the files first.
-    """
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-
-    size_mb = config.DB_PATH.stat().st_size / 1_048_576
-    free_mb = _disk_free_mb(BACKUP_DIR)
-    if free_mb < size_mb * 1.1:
-        raise HTTPException(
-            status_code=507,
-            detail=f"Not enough disk space: the database is {size_mb:,.0f} MB and only "
-                   f"{free_mb:,.0f} MB is free. Delete some older backups first.")
-
-    stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
-    target = BACKUP_DIR / f"ims-{stamp}.sqlite"
-
-    source = db.get_connection()
-    destination = sqlite3.connect(target)
+    """Take a copy now, on top of whatever the schedule has already taken."""
     try:
-        source.backup(destination)
-    finally:
-        destination.close()
-
-    # Keep the most recent few; the DOS system rotated six days of floppies.
-    removed = []
-    for old in sorted(BACKUP_DIR.glob("ims-*.sqlite"), reverse=True)[KEEP_BACKUPS:]:
-        removed.append(old.name)
-        old.unlink()
-
-    with db.transaction() as conn:
-        db.audit(conn, user["username"], "backup", "database", target.name,
-                 f"{target.stat().st_size / 1_048_576:,.1f} MB")
-
-    return {
-        "name": target.name,
-        "size_mb": round(target.stat().st_size / 1_048_576, 1),
-        "removed": removed,
-        "backups": _backup_rows(),
-    }
+        return take_backup(user["username"])
+    except BackupSpaceError as exc:
+        raise HTTPException(status_code=507, detail=str(exc)) from exc
 
 
 @router.post("/check")

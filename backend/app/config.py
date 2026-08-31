@@ -35,9 +35,23 @@ SCHEMA_DIR = APP_DIR / "schema"
 PLAINTEXT_DIR = Path(
     os.getenv("IMS_PLAINTEXT_DIR", DB_PATH.parent / "plaintext")).resolve()
 
-# Backups taken by the maintenance screen, named ims-YYYYMMDD-HHMMSS.sqlite.
+# Backups, named ims-YYYYMMDD-HHMMSS.sqlite (with -auto for the scheduled ones).
 # Defined here rather than in the router so dump_db.py can find them too.
 BACKUP_DIR = DB_PATH.parent / "backups"
+
+# How long a backup is kept. The DOS system rotated Monday-to-Saturday floppies;
+# this is the same week, without anybody carrying a box to the safe.
+BACKUP_KEEP_DAYS = int(os.getenv("IMS_BACKUP_DAYS", "7"))
+
+# ...and the floor that age alone cannot go below. An office that closes for a
+# fortnight would otherwise come back to a backup folder that had tidied itself
+# empty, which is the one state a backup system must never reach.
+BACKUP_KEEP_MIN = int(os.getenv("IMS_BACKUP_KEEP_MIN", "3"))
+
+# Hours between automatic backups. 0 turns them off and leaves only the button
+# on the maintenance screen. A week of retention means little if the only
+# backups in it are the ones somebody remembered to take.
+BACKUP_EVERY_HOURS = int(os.getenv("IMS_BACKUP_HOURS", "24"))
 
 COMPANY_NAME = os.getenv("IMS_COMPANY", "Marina Trading")
 APP_NAME = "Inventory Monitoring System"
