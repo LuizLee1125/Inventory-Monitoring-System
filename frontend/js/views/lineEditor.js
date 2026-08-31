@@ -11,9 +11,13 @@ import { attachLookup, el, money, qty } from '../ui.js';
  *   priceField   - which stock price to default to ('price_a' … 'price_e'), or
  *                  'cost' for purchases
  *   showDiscounts- render the three discount columns
+ *   checkStock   - warn when a quantity exceeds what is on hand. On for the
+ *                  invoice editor, off for purchases and returns, which put
+ *                  stock back rather than taking it
  *   onChange     - called after every recalculation with the subtotal
  */
-export function lineEditor({ priceField = 'price_a', showDiscounts = true, onChange } = {}) {
+export function lineEditor({ priceField = 'price_a', showDiscounts = true,
+                             checkStock = false, onChange } = {}) {
   const body = el('tbody');
   const subtotalCell = el('span', { text: money(0) });
   const rows = [];
@@ -58,8 +62,39 @@ export function lineEditor({ priceField = 'price_a', showDiscounts = true, onCha
     const disc1 = el('input', { type: 'number', step: '0.01', value: preset.disc1 ?? '' });
     const disc2 = el('input', { type: 'number', step: '0.01', value: preset.disc2 ?? '' });
     const totalCell = el('td', { class: 'total', text: money(0) });
+    const stockWarning = el('span', { class: 'line-warn', hidden: true });
 
-    const row = { code, description, qty: quantity, unit, price, disc1, disc2, totalCell, removed: false };
+    const row = {
+      code, description, qty: quantity, unit, price, disc1, disc2, totalCell,
+      removed: false,
+      // Filled in by the lookup. `null` means nothing has been picked on this
+      // row yet, which is not the same as an item with nothing on hand.
+      onHand: null, allowOversell: true, itemUnit: '',
+    };
+
+    /**
+     * Say, before the save, that this line is taking more than is there.
+     *
+     * Advisory only — the server decides, and it decides on the quantities as
+     * they are at the moment of the save rather than as they were when this
+     * row's lookup ran. That is the whole point: this warning can be *wrong*
+     * in both directions by the time Save is pressed, because somebody else is
+     * invoicing at the same counter. It exists to catch the ordinary case
+     * early, not to be authoritative.
+     */
+    function checkQuantity() {
+      if (!checkStock || row.onHand === null) return;
+      const wanted = Number(quantity.value || 0);
+      const over = wanted > Math.max(0, row.onHand);
+      quantity.classList.toggle('over', over);
+      stockWarning.hidden = !over;
+      if (!over) return;
+      const short = Math.round((wanted - Math.max(0, row.onHand)) * 100) / 100;
+      stockWarning.textContent = row.allowOversell
+        ? `${qty(Math.max(0, row.onHand))} on hand · ${qty(short)} short`
+        : `Only ${qty(Math.max(0, row.onHand))} on hand — this item cannot be oversold`;
+      stockWarning.classList.toggle('blocking', !row.allowOversell);
+    }
 
     const remove = el('button', {
       class: 'btn ghost sm', text: '✕', title: 'Remove line',
@@ -74,7 +109,7 @@ export function lineEditor({ priceField = 'price_a', showDiscounts = true, onCha
     const cells = [
       el('td', { style: 'width:150px;position:relative' }, [code]),
       el('td', {}, [description]),
-      el('td', { class: 'num', style: 'width:95px' }, [quantity]),
+      el('td', { class: 'num', style: 'width:95px' }, [quantity, stockWarning]),
       el('td', { style: 'width:80px' }, [unit]),
       el('td', { class: 'num', style: 'width:110px' }, [price]),
       ...(showDiscounts ? [
@@ -95,12 +130,19 @@ export function lineEditor({ priceField = 'price_a', showDiscounts = true, onCha
       onPick: (item) => {
         description.value = item.name;
         unit.value = item.unit || '';
+        row.onHand = Number(item.qty_on_hand || 0);
+        // Absent on a server that predates the column, and the safe reading of
+        // absent is the column's own default: selling was always allowed
+        // before it existed.
+        row.allowOversell = item.allow_oversell === undefined
+          ? true : Boolean(item.allow_oversell);
         if (!price.value) {
           price.value = Number(item[priceField] ?? item.price_a ?? 0).toFixed(2);
         }
         if (!quantity.value) quantity.value = 1;
         quantity.focus();
         quantity.select();
+        checkQuantity();
         recalc();
         // Typing into the last row starts a new one, as the DOS grid did.
         if (row === rows[rows.length - 1]) addRow();
@@ -110,6 +152,8 @@ export function lineEditor({ priceField = 'price_a', showDiscounts = true, onCha
     for (const node of [quantity, price, disc1, disc2]) {
       node.addEventListener('input', recalc);
     }
+    quantity.addEventListener('input', checkQuantity);
+    row.check = checkQuantity;
     quantity.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') { event.preventDefault(); price.focus(); }
     });
@@ -138,6 +182,40 @@ export function lineEditor({ priceField = 'price_a', showDiscounts = true, onCha
     node,
     recalc,
     addRow,
+
+    /** The stock codes currently typed on the grid, de-duplicated. */
+    codes() {
+      return [...new Set(rows
+        .filter((row) => !row.removed && row.code.value.trim())
+        .map((row) => row.code.value.trim().toUpperCase()))];
+    },
+
+    /**
+     * Re-apply on-hand figures fetched since the rows were typed.
+     *
+     * This is what makes the editor live. A clerk half way through a long
+     * invoice is looking at quantities read minutes ago, and the person at the
+     * next counter has been selling from the same shelf the whole time. Handed
+     * `{CODE: {qty_on_hand, allow_oversell}}` the grid re-checks every row, so
+     * the warning appears while there is still time to do something about it
+     * rather than in a toast after the save.
+     *
+     * Only the *warning* moves. Nothing the clerk typed is touched — quantities,
+     * prices and discounts are theirs, and a screen that edits itself under
+     * somebody's hands is worse than one that is out of date.
+     */
+    applyStock(byCode) {
+      for (const row of rows) {
+        if (row.removed) continue;
+        const fresh = byCode[row.code.value.trim().toUpperCase()];
+        if (!fresh) continue;
+        row.onHand = Number(fresh.qty_on_hand || 0);
+        row.allowOversell = fresh.allow_oversell === undefined
+          ? true : Boolean(fresh.allow_oversell);
+        row.check?.();
+      }
+    },
+
     /** Lines ready to send to the API. */
     getLines() {
       return rows

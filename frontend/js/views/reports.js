@@ -22,6 +22,7 @@ const REPORTS = {
   'inactive-customers': 'Inactive Customers',
   expiring: 'Expiration Inquiry',
   depleted: 'Depleted Stocks',
+  refill: 'Needs Refilling',
   movers: 'Fast and slow movers',
 };
 
@@ -66,6 +67,7 @@ export async function render(container, params = {}) {
     inventory: inventoryReport,
     expiring: expiringReport,
     depleted: depletedReport,
+    refill: refillReport,
     movers: moversReport,
     collections: collectionsReport,
     'inactive-customers': inactiveReport,
@@ -292,6 +294,75 @@ async function depletedReport(host) {
     onRowClick: (row) => { window.location.hash = `#/stock/${encodeURIComponent(row.code)}`; },
     emptyText: 'Every item is above its reorder point.',
   }), [], { flush: true }));
+}
+
+/**
+ * Needs Refilling — what has been sold and not delivered.
+ *
+ * Two tables, because two different people read this. The buyer wants one row
+ * per item: a purchase order is raised per item, and three invoices short of
+ * the same box is one order, not three. Whoever answers the phone wants the
+ * other view — which customers are waiting, on which invoice, since when.
+ *
+ * Sitting next to Depleted Stocks and easily confused with it, so the
+ * distinction is stated on the screen rather than left to the title. Depleted
+ * is what has run low; this is what has already been promised.
+ */
+async function refillReport(host) {
+  loading(host, 6);
+  const data = await api.get('/reports/refill');
+  clear(host);
+
+  const items = data.items || [];
+  const documents = data.documents || [];
+
+  host.append(
+    el('p', { class: 'hint' }, [
+      'Stock that invoices have already promised and that was not on the shelf. '
+      + 'The sale went through — for anything the office can reorder, that is '
+      + 'worth more than a tidy stock figure — and the difference is listed here '
+      + 'until a delivery covers it. Rows clear themselves when the item comes '
+      + 'back to zero or above; there is nothing to tick off.',
+    ]),
+
+    card('To buy', dataTable([
+      { key: 'code', label: 'Code', class: 'mono' },
+      { key: 'name', label: 'Description', class: 'wrap' },
+      { key: 'qty_short', label: 'Owed', align: 'right',
+        render: (r) => el('span', { class: 'danger-text', text: qty(r.qty_short) }) },
+      { key: 'unit', label: 'Unit' },
+      { key: 'qty_on_hand', label: 'On hand', align: 'right',
+        render: (r) => el('span', { class: r.qty_on_hand < 0 ? 'danger-text' : '',
+                                    text: qty(r.qty_on_hand) }) },
+      { key: 'reorder_qty', label: 'Usual order', align: 'right',
+        render: (r) => qty(r.reorder_qty) },
+      { key: 'supplier_code', label: 'Supplier' },
+      { key: 'documents', label: 'Invoices', align: 'right' },
+      { key: 'since', label: 'Since', render: (r) => date(r.since) },
+    ], items, {
+      onRowClick: (row) => { window.location.hash = `#/stock/${encodeURIComponent(row.code)}`; },
+      footer: { name: `${items.length} item(s) owing`, qty_short: qty(data.total_short || 0) },
+      emptyText: 'Nothing has been sold beyond what was on the shelf.',
+    }), [], { flush: true }),
+
+    documents.length ? card('Who is waiting', dataTable([
+      { key: 'doc_no', label: 'Invoice', class: 'mono' },
+      { key: 'doc_date', label: 'Date', render: (r) => date(r.doc_date) },
+      { key: 'customer_name', label: 'Customer', class: 'wrap',
+        render: (r) => r.customer_name || r.customer_code || '' },
+      { key: 'stock_code', label: 'Code', class: 'mono' },
+      { key: 'description', label: 'Item', class: 'wrap' },
+      { key: 'qty_requested', label: 'Sold', align: 'right', render: (r) => qty(r.qty_requested) },
+      { key: 'qty_available', label: 'There was', align: 'right',
+        render: (r) => qty(r.qty_available) },
+      { key: 'qty_short', label: 'Short', align: 'right',
+        render: (r) => el('span', { class: 'danger-text', text: qty(r.qty_short) }) },
+      { key: 'created_by', label: 'Sold by' },
+    ], documents, {
+      onRowClick: (row) => { window.location.hash = `#/invoices/${encodeURIComponent(row.doc_no)}`; },
+      emptyText: 'Nothing outstanding.',
+    }), [], { flush: true }) : null,
+  );
 }
 
 async function agingReport(host) {

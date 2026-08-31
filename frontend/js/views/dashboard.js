@@ -4,7 +4,22 @@ import { api } from '../api.js';
 import {
   card, clear, count, date, dataTable, el, money, stat, statusTag,
 } from '../ui.js';
-import { setTitle } from '../app.js';
+import { page, setTitle } from '../app.js';
+import { onChange } from '../live.js';
+
+// Same reasoning as the home screen: this is a monitor-in-the-corner screen, so
+// the figures must not stop at whenever it was opened — and it is nobody's
+// working screen, so a long debounce costs nothing and saves a redraw per
+// invoice through a busy afternoon.
+const REFRESH_MS = 3000;
+
+let watching = null;
+
+/** The router calls this when the screen is replaced. */
+export function leave() {
+  watching?.();
+  watching = null;
+}
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -175,6 +190,19 @@ export const skeleton = 'stats';
 
 export async function render(container) {
   setTitle('Dashboard');
+  watching?.();
+  watching = onChange(
+    ['invoice:created', 'invoice:cancelled', 'collection:created',
+     'purchase:created', 'return:created', 'stock:changed'],
+    () => {
+      if ((window.location.hash.slice(1) || '/').split('?')[0] !== '/overview') return;
+      const host = page();
+      host.replaceChildren();
+      return render(host);
+    },
+    { wait: REFRESH_MS },
+  );
+
   const data = await api.get('/reports/dashboard');
   const ar = data.receivable || {};
   const stock = data.stock || {};

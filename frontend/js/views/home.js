@@ -12,11 +12,25 @@
 
 import { api } from '../api.js';
 import { count, date, el, money, monthsAgo, qty, toast, today } from '../ui.js';
-import { can, session, setTitle, signOut } from '../app.js';
+import { can, page, session, setTitle, signOut } from '../app.js';
+import { onChange } from '../live.js';
 
 const ACTIONS = {
   signout: () => signOut(),
 };
+
+// The home screen is the one that is left up. It is what a workstation shows
+// between customers and what somebody glances at on the way past, so figures
+// that are hours old are worse here than anywhere else — "today's sales" that
+// stopped counting at half past nine is a number that misleads rather than
+// informs.
+//
+// A long debounce on purpose: this screen refetches five endpoints, and it is
+// nobody's working screen. Being three seconds behind costs nothing; redrawing
+// it on every invoice in a busy hour costs the machine it is idling on.
+const HOME_REFRESH_MS = 3000;
+
+let watching = null;
 
 // Every destination the DOS menu had, on the key it had. Not all are drawn.
 const SHORTCUTS = [
@@ -98,9 +112,17 @@ const PRIMARY = {
 // that nothing moves when the fetch lands.
 export const skeleton = 'stats';
 
+/** The router calls this when the screen is replaced. */
+export function leave() {
+  watching?.();
+  watching = null;
+  detachShortcuts?.();
+}
+
 export async function render(container) {
   setTitle('Home');
   detachShortcuts?.();
+  watching?.();
   container.classList.add('home-fit');
 
   const menu = ROLE_MENU[session.user.role];
@@ -135,6 +157,20 @@ export async function render(container) {
   );
 
   bindShortcuts();
+
+  watching = onChange(
+    ['invoice:created', 'invoice:cancelled', 'collection:created',
+     'purchase:created', 'return:created'],
+    () => {
+      // Only while this is still the screen. `render()` is async and the router
+      // may have moved on between the event and the redraw.
+      if ((window.location.hash.slice(1) || '/').split('?')[0] !== '/') return;
+      const container = page();
+      container.replaceChildren();
+      return render(container);
+    },
+    { wait: HOME_REFRESH_MS },
+  );
 }
 
 /* -------------------------------------------------------------- heading -- */

@@ -49,6 +49,12 @@ export async function render(container) {
       el('div', { class: 'form-grid', style: 'margin-top:18px' }, [
         fact('Kept — still unpaid', count(data.kept.unpaid_invoices) + ' invoices'),
         fact('Kept — cancelled', count(data.kept.cancelled_invoices) + ' invoices'),
+        // Paid for and not yet delivered. A server that predates this figure
+        // sends no key, and the row is dropped rather than reading "0 invoices"
+        // — which would be a claim, and a false one.
+        data.kept.invoices_owing_stock === undefined ? null
+          : fact('Kept — stock still owed',
+                 count(data.kept.invoices_owing_stock) + ' invoices'),
         fact('Oldest invoice on file', data.oldest_invoice || '—'),
         fact('Database size now', `${count(data.database_mb)} MB`),
       ]),
@@ -103,8 +109,9 @@ export async function render(container) {
     card('Run the purge', el('div', {}, [
       el('p', { class: 'hint' },
         ['Only fully paid invoices, posted collections and their movements are removed. '
-         + 'Anything still owed, and anything cancelled, is always kept. There is no undo '
-         + 'other than restoring the backup.']),
+         + 'Anything still owed — money or stock — and anything cancelled is always kept: '
+         + 'an invoice waiting on a delivery is unfinished business even when it has been '
+         + 'paid for. There is no undo other than restoring the backup.']),
       el('div', { class: 'form-grid', style: 'max-width:320px;margin-top:12px' }, [
         field('Confirmation', confirm),
       ]),

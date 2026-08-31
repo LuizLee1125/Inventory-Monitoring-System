@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import db
+from .. import db, events
 from ..deps import clean, money, paged_response, paging, require
 
 router = APIRouter(prefix="/collections", tags=["collections"])
@@ -188,6 +188,22 @@ def create_collection(payload: dict,
         db.audit(conn, user["username"], "create", "collection", col_no,
                  f"{customer_code} {net:,.2f} applied to {len(targets)} invoice(s)")
 
+    batch = events.batch()
+    batch.add("collection:created",
+              {"col_no": col_no, "customer_code": customer_code,
+               "net_amount": net, "applied": applied_total,
+               "by": user["username"]},
+              permission="collection:read")
+    # A payment changes every invoice it settles, and the invoice list is where
+    # somebody watches for that. One event per settled document rather than a
+    # bare "something changed", so a screen showing one invoice can tell whether
+    # it is the one that moved.
+    for inv_no, apply_amount in targets:
+        if apply_amount > 0:
+            batch.add("invoice:updated",
+                      {"inv_no": inv_no, "reason": "payment"},
+                      permission="invoice:read")
+    batch.flush()
     return _load(col_no)
 
 
@@ -206,9 +222,11 @@ def reverse_collection(col_no: str, payload: dict,
         if row["status"] == "REVERSED":
             raise HTTPException(status_code=400, detail="Already reversed.")
 
+        restored: list[str] = []
         for application in conn.execute(
                 "SELECT * FROM collection_applications WHERE col_no = ?",
                 (col_no,)).fetchall():
+            restored.append(application["inv_no"])
             conn.execute(
                 "UPDATE invoices SET paid_amount = ROUND(paid_amount - ?, 2), "
                 "balance = ROUND(balance + ?, 2), status = 'OPEN', "
@@ -224,4 +242,14 @@ def reverse_collection(col_no: str, payload: dict,
             "remarks = TRIM(remarks || ' [reversed: ' || ? || ']'), "
             "version = version + 1 WHERE col_no = ?", (reason, col_no))
         db.audit(conn, user["username"], "reverse", "collection", col_no, reason)
+
+    batch = events.batch()
+    batch.add("collection:reversed",
+              {"col_no": col_no, "customer_code": row["customer_code"],
+               "reason": reason, "by": user["username"]},
+              permission="collection:read")
+    for inv_no in restored:
+        batch.add("invoice:updated", {"inv_no": inv_no, "reason": "reversal"},
+                  permission="invoice:read")
+    batch.flush()
     return _load(col_no)

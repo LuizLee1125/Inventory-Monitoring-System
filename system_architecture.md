@@ -1093,6 +1093,210 @@ Failure is a plain `info` toast, not an error: the address is on screen directly
 above the button and can be selected by hand, so pointing at it beats explaining
 a permissions model.
 
+## The live channel (v0.4)
+
+Every screen used to learn about a change by asking again. `notify.js` polled a
+count every sixty seconds and nothing else asked at all, so a stock figure was
+correct at the moment it was drawn and unexamined thereafter. In an office where
+two clerks invoice from the same shelf, that is the difference between a warning
+and an apology.
+
+`backend/app/events.py` is the bus, `routers/events.py` serves it, `frontend/js/live.js`
+consumes it.
+
+### Server-Sent Events, not a WebSocket
+
+`NTC-TMS-Tauri` does this with a NestJS Socket.IO gateway
+(`backend/src/sockets/realtime.gateway.ts`). Four of its properties are the
+feature and are copied exactly: **the server pushes and the client never sends**
+(its `ClientToServerEvents` is `Record<string, never>`), **events are named
+`entity:action`**, **delivery is filtered per recipient**, and **a reconnection
+inside a window replays what was missed**.
+
+The transport is not copied, for three reasons in order of weight:
+
+1. This application ships **no JavaScript dependencies at all** — the same
+   argument that made the sales chart hand-drawn SVG. `socket.io-client` is
+   40 KB and a build step; `EventSource` is already in the browser. On the
+   server, a WebSocket needs `websockets` or `wsproto` plus framing code, for a
+   channel that carries no client-to-server traffic.
+2. **SSE resumes by itself.** The browser reconnects and replays `Last-Event-ID`
+   with no application code, which is the same guarantee `connectionStateRecovery`
+   buys there, obtained for nothing.
+3. It is one long-lived GET on the same origin, same cookie, same port. Nothing
+   about `start.bat`, the Tauri shell, or `capabilities/default.json` changes.
+
+### The CPU budget is the design
+
+The server is a PC in the corner and the clients are counter machines left open
+for days. Seven rules, and every one is load-bearing:
+
+1. **Nothing polls the database for changes.** An event is published by the code
+   that already performed the write, inside the request that made it. There is
+   no watcher thread and no `WHERE updated_at > ?` loop.
+2. **The bus is in-process `asyncio`.** A publish appends to the queues that want
+   it and returns. **An idle system runs no timer and costs nothing.**
+3. **One writer coalesces per request.** `events.Batch` merges an invoice's forty
+   stock codes into one `stock:changed`, so one save is one refetch on each open
+   screen rather than forty.
+4. **A view refetches only while mounted and visible.** `mount()` calls the
+   view's `leave`, which unsubscribes; `onChange()` debounces and returns early
+   on `document.hidden`. NTC recorded the same lesson — streaming an org-wide
+   list into a mounted table "re-rendered the whole table on traffic that mostly
+   wasn't the viewer's".
+5. **A hidden tab closes the connection** and resumes from `lastId` on return.
+6. **One 25-second keepalive per connection** is the only recurring timer. It
+   exists because an idle response is dropped silently by WebView2 and by
+   anything sitting between the counter and the server.
+7. **It is a net reduction.** Measured on this machine, ten held-open streams
+   cost **0.000 s of CPU over 40 s** — below the resolution of
+   `TotalProcessorTime`. The 60-second poll it replaces cost 0.016 s for the same
+   ten clients, and made 14,400 requests a day between them to be told nothing
+   had changed.
+
+### Visibility is a permission, for the same reason the bell's is
+
+The gateway there routes by per-user rooms keyed on the JWT `sub`. Here each
+event carries the **permission** needed to receive it, and `Event.wanted_by()`
+matches it against the session — so there is no second list of roles to keep in
+step with `security.ROLES`, exactly as `notifications.py` argues. This is tested:
+a `sales` account receives `invoice:created` and `stock:changed` from an
+oversold invoice and never receives the `stock:short` beside them, because
+`stock:short` is addressed to `purchase:read`.
+
+`user_id` narrows an event to one person and is the **exception**, not the rule —
+only `notification:read` uses it, so somebody signed in at two machines does not
+see two different badges. Almost everything else in an inventory system is
+everybody's business.
+
+### Things that will bite
+
+- **`Batch.flush()` runs after the commit, never inside it.** A client told about
+  an invoice will ask for it, and would otherwise be answered by a reader that
+  cannot see it yet — or be told about a document that then rolled back.
+- **Every event name must be listed in `EVENTS` in `live.js`.** `EventSource`
+  dispatches by name, so an unlisted event is delivered and arrives at no
+  listener. This is the one way to add a `batch.add(...)` that silently does
+  nothing.
+- **`Subscriber` is `@dataclass(eq=False)`.** A generated `__eq__` sets
+  `__hash__ = None`, and the hub keeps subscribers in a set. It is also the right
+  semantics: two windows signed in as one user are two subscribers.
+- **Publishers run on the threadpool.** The routers are `def`, not `async def`,
+  so `publish()` hands delivery to the loop through `call_soon_threadsafe` —
+  scheduled *inside* the lock, or two threads could deliver event 6 before 5.
+- **The position is carried twice.** `Last-Event-ID` is the header the browser
+  sets on its own retries; `since` is the query parameter the client sets when it
+  reopens deliberately, because that header cannot be set by hand. Without the
+  second one, every return to a hidden tab would be a full resync.
+- **A full queue drops its backlog and sends one `sync:required`.** A hundred
+  stale events are worth less than one instruction to start again, and it is the
+  only thing that bounds memory behind a stuck reader.
+
+## Selling stock that is not there (v0.4)
+
+An item shows 100. One clerk invoices 80 and saves. A second clerk, whose screen
+was fetched before that save, invoices 50. **The second invoice goes through.**
+
+That is a business decision, not a bug: for anything the office can reorder
+quickly, a sale is worth more than a tidy stock figure, and the clerk was reading
+a number that was correct when it was drawn. The system already behaved this way —
+`create_invoice` never checked stock and `qty_on_hand` was simply allowed to go
+negative. What was missing was everything that should happen next.
+
+### Three things were wrong, and none was "it was allowed"
+
+1. **Nothing recorded it.** The negative balance said *something* went short, not
+   which document, not for how much, and the next receipt erased it.
+2. **Nobody was told.** Not the clerk, who typed 50 believing there were 100; not
+   the buyer, who is the person who has to act.
+3. **`balance_after` could be wrong with no concurrency at all.** Every line
+   re-read the row fetched at the top of the transaction, so **an invoice listing
+   the same code twice** wrote the pre-invoice balance on the second. One clerk,
+   one document, wrong ledger. `purchases.py` had it worse — it writes
+   `qty_on_hand = ?` as an absolute, so the second line *discarded* the first,
+   which is how a part-shipped order was entered. `returns.py` had it too.
+
+The fix for (3) is a `running` dict of on-hand-so-far in all three routers.
+`db.transaction()` is `BEGIN IMMEDIATE`, so two savers genuinely serialise and
+the arithmetic between them was never at risk; this is about one document.
+
+### `stock.allow_oversell`, defaulting to 1
+
+The brief said "when the stock product are easily refillable", which reads as a
+property of the product — so it is one. **Defaulting to 1 is the important
+half**: every one of this office's 2,137 migrated rows keeps exactly the
+behaviour it had, and 0 is the deliberate exception for something that cannot be
+promised. That is the only path that returns an error (409, naming the quantity
+actually available).
+
+### The obligation lives in `stock_shortfalls`, not in a negative balance
+
+One row per (document, stock code) that went below zero, carrying what was
+wanted, **what was there at that moment** — the number nobody can reconstruct
+afterwards and the first thing a buyer asks — what is owed, and `resolved_at`.
+
+`replenishment.shortfall()` clamps availability at zero first. Without the clamp
+a second oversell against an item already at -30 would be recorded 30 too large
+and the buyer told to order twice over.
+
+**Nothing marks a shortfall handled by hand, and there is no endpoint to.** It is
+discharged by stock arriving: `resolve_settled()` closes the rows whose item is
+back to zero or above, and is called by receiving, by a sales return, by an
+inventory adjustment, and by `sweep()` as a net under all of them — so a path
+added later that forgets costs a stale alert for fifteen minutes rather than
+forever. Cancelling the invoice calls `resolve_document()` instead, because the
+goods went back on the shelf and nothing is owed to anybody.
+
+### The alert goes through the ordinary sweep
+
+`stock.refill` is a fourth `Condition`, and invoicing calls
+`alerts.sweep_kind("stock.refill")` after the commit rather than
+`raise_alert()`. Going through the same code as the timer is what keeps the
+wording, the severity and the `NOTIFY_ROLLUP_AT` roll-up identical between the
+two — a hand-written alert would drift, and the pair would then flip-flop every
+quarter of an hour as each rewrote the other.
+
+Its permission is **`purchase:read`, not `stock:read`**: the answer to "we sold
+thirty we did not have" is a purchase order. The clerk who caused it is told on
+their own screen at the moment of the save and does not need a bell as well —
+which is also why `app.js` skips the `stock:short` toast when `data.by` is the
+signed-in user.
+
+### Where it surfaces
+
+| Where | What it says |
+| --- | --- |
+| the line editor | on-hand and the shortfall under the quantity, **updated live** as other people sell — advisory, and it can be wrong in both directions by the time Save is pressed, which is the point |
+| the save | one `warn` toast per short line, naming what was there and what was taken |
+| the invoice | a banner above the toolbar, and a Short column drawn only when `short_lines` is non-zero |
+| the stock item | a banner, and the `allow_oversell` state as a fact row |
+| `/reports/refill` | one table per item (the buying list — a purchase order is per item, so three invoices short of one box is one order) and one per document (who is waiting) |
+| the bell | `stock.refill`, rolled up past eight items like every other condition |
+
+`invoices.short_lines` is on the header so the **list** screen never has to join
+to `stock_shortfalls` to know whether to say anything.
+
+`create_invoice` returns `short_now` separately from the loaded document's
+`shortfalls`: it is what went short *on this save*, which is what the person who
+just pressed the button needs told, and it stays right even if the item is
+refilled a minute later and the stored rows resolve.
+
+### Purging leaves them alone
+
+An invoice still owing stock is unfinished business exactly as an unpaid one is,
+so `_PURGEABLE` excludes it. The alternative — deleting the invoice and keeping
+the shortfall — leaves the refill list naming a document nobody can open; the
+alternative to *that* drops a live obligation because the customer happened to
+pay before the goods arrived. Resolved shortfalls for purged invoices are deleted
+with them.
+
+### `since` is `doc_date`, not `created_at`
+
+They differ by up to a day: document dates are business dates in the office's own
+zone (`db.today()`), `created_at` is UTC (`db.now()`). An invoice raised on the
+morning of the 1st in Manila is stamped late on the 31st in UTC, and the report
+prints the two columns side by side.
+
 ## Versions, and the updater (v0.4)
 
 ### Where the version lives

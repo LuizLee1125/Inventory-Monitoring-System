@@ -99,6 +99,22 @@ CREATE TABLE IF NOT EXISTS stock (
     remarks        TEXT    NOT NULL DEFAULT '',
     last_txn       TEXT,
     price_updated  TEXT,
+
+    -- May an invoice take more of this than there is on the shelf?
+    --
+    -- Two clerks invoicing the same item at the same counter is not a fault to
+    -- be prevented; it is Tuesday. For anything the office can reorder in a day
+    -- the sale should go through and the shortfall should become a note to the
+    -- buyer, which is what `stock_shortfalls` and the `stock.refill` alert are.
+    -- Refusing it would turn a paperwork problem into a lost sale.
+    --
+    -- DEFAULT 1 because that is exactly what the system did before this column
+    -- existed: `create_invoice` never checked, and `qty_on_hand` was simply
+    -- allowed to go negative. Every migrated row therefore keeps its behaviour,
+    -- and 0 is the deliberate exception for an item that genuinely cannot be
+    -- promised — a controlled drug, a single-source import, a discontinued line.
+    allow_oversell INTEGER NOT NULL DEFAULT 1,
+
     is_active      INTEGER NOT NULL DEFAULT 1,
     version        INTEGER NOT NULL DEFAULT 1,
     updated_at     TEXT,

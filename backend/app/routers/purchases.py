@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import db
+from .. import db, events, replenishment
+from .. import notifications as alerts
 from ..deps import check_version, clean, money, paged_response, paging, require
 from .invoices import discounted
 
@@ -98,6 +99,17 @@ def create_purchase(payload: dict,
 
         prepared: list[dict] = []
         gross = 0.0
+
+        # Quantity and moving-average cost as each line leaves them.
+        #
+        # The same fix as the one in `invoices.py`, and it matters more here:
+        # this loop writes `qty_on_hand = ?` as an absolute value, so a receipt
+        # listing the same code on two lines used to compute both from the
+        # pre-receipt balance and the second write discarded the first. Two
+        # deliveries of one item on one supplier invoice - which is how a
+        # part-shipped order is entered - silently lost a line.
+        running: dict[str, tuple[float, float]] = {}
+
         for index, raw in enumerate(raw_lines, start=1):
             code = clean(raw.get("stock_code"), upper=True)
             qty = money(raw.get("qty"))
@@ -116,10 +128,12 @@ def create_purchase(payload: dict,
             line_total = discounted(qty * unit_cost, ld1, 0, 0)
             gross += round(qty * unit_cost, 2)
 
-            on_hand = item["qty_on_hand"]
+            on_hand, held_cost = running.get(
+                code, (item["qty_on_hand"], item["cost"]))
             # Moving average; if stock was negative or zero, take the new cost.
-            new_cost = (round((on_hand * item["cost"] + qty * unit_cost) / (on_hand + qty), 4)
+            new_cost = (round((on_hand * held_cost + qty * unit_cost) / (on_hand + qty), 4)
                         if on_hand + qty > 0 and on_hand > 0 else unit_cost)
+            running[code] = (round(on_hand + qty, 2), new_cost)
 
             prepared.append({
                 "line_no": len(prepared) + 1, "stock_code": code,
@@ -188,9 +202,30 @@ def create_purchase(payload: dict,
             "UPDATE suppliers SET balance = ROUND(balance + ?, 2), "
             "purchases = ROUND(purchases + ?, 2), last_txn = ?, version = version + 1 "
             "WHERE code = ?", (net, net, pur_date, supplier_code))
-        db.audit(conn, user["username"], "create", "purchase", pur_no,
-                 f"{supplier_code} {net:,.2f}")
+        # Stock arriving is the whole of what closes a refill note - there is no
+        # "mark as handled" button anywhere, deliberately, because the obligation
+        # is discharged by the delivery and not by somebody saying it was.
+        # `resolve_settled` only closes the codes this receipt brought back to
+        # zero or above, so a part shipment leaves the note standing.
+        refilled = replenishment.resolve_settled(
+            conn, [line["stock_code"] for line in prepared],
+            username=user["username"])
 
+        db.audit(conn, user["username"], "create", "purchase", pur_no,
+                 f"{supplier_code} {net:,.2f}"
+                 + (f" — cleared {refilled} refill note(s)" if refilled else ""))
+
+    if refilled:
+        alerts.sweep_kind("stock.refill")
+
+    batch = events.batch()
+    batch.add("purchase:created",
+              {"pur_no": pur_no, "supplier_code": supplier_code,
+               "supplier_name": supplier["name"], "net_amount": net,
+               "by": user["username"]},
+              permission="purchase:read")
+    batch.stock_changed(*(line["stock_code"] for line in prepared))
+    batch.flush()
     return _load(pur_no)
 
 

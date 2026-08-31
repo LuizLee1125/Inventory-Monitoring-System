@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import db
+from .. import db, events, replenishment
+from .. import notifications as alerts
 from ..deps import check_version, clean, money, paged_response, paging, require
 
 router = APIRouter(prefix="/returns", tags=["returns"])
@@ -103,6 +104,11 @@ def create_return(payload: dict,
                            f"not {customer_code}.")
 
         prepared: list[dict] = []
+        # On hand as each line leaves it, so a return listing the same code
+        # twice writes two ascending `balance_after` values on the ledger rather
+        # than the same pre-return figure twice. Same fix as `invoices.py`.
+        running: dict[str, float] = {}
+
         for index, raw in enumerate(raw_lines, start=1):
             code = clean(raw.get("stock_code"), upper=True)
             qty = money(raw.get("qty"))
@@ -124,12 +130,15 @@ def create_return(payload: dict,
                 unit_price = original["unit_price"] if original else item["price_a"]
             unit_price = unit_price or item["price_a"]
 
+            new_qty = round(running.get(code, item["qty_on_hand"]) + qty, 2)
+            running[code] = new_qty
+
             prepared.append({
                 "line_no": len(prepared) + 1, "stock_code": code,
                 "description": item["name"], "qty": qty,
                 "unit": clean(raw.get("unit"), upper=True) or item["unit"],
                 "unit_price": unit_price, "line_total": round(qty * unit_price, 2),
-                "new_qty": round(item["qty_on_hand"] + qty, 2),
+                "new_qty": new_qty,
                 "division": item["division"], "category": item["category"],
                 "unit_cost": item["cost"],
             })
@@ -191,9 +200,30 @@ def create_return(payload: dict,
             "returns_total = ROUND(returns_total + ?, 2), last_txn = ?, "
             "version = version + 1 WHERE code = ?",
             (net, net, sr_date, customer_code))
+        # Goods coming back are goods on the shelf, so a return can settle a
+        # refill note as surely as a delivery can - which is the common case
+        # when the wrong item was picked and the right one was sold short.
+        refilled = replenishment.resolve_settled(
+            conn, [line["stock_code"] for line in prepared],
+            username=user["username"])
+
         db.audit(conn, user["username"], "create", "return", sr_no,
                  f"{customer_code} {net:,.2f} applied {applied:,.2f}")
 
+    if refilled:
+        alerts.sweep_kind("stock.refill")
+
+    batch = events.batch()
+    batch.add("return:created",
+              {"sr_no": sr_no, "customer_code": customer_code,
+               "ref_invoice": ref_invoice, "net_amount": net,
+               "by": user["username"]},
+              permission="return:read")
+    if ref_invoice and applied:
+        batch.add("invoice:updated", {"inv_no": ref_invoice, "reason": "return"},
+                  permission="invoice:read")
+    batch.stock_changed(*(line["stock_code"] for line in prepared))
+    batch.flush()
     return _load(sr_no)
 
 

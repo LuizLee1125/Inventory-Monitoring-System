@@ -7,6 +7,7 @@ import {
   skeletonTable, statusTag, toast, today, toolbar,
 } from '../ui.js';
 import { can, page, setTitle } from '../app.js';
+import { onChange, subscribe } from '../live.js';
 import { lineEditor } from './lineEditor.js';
 
 const state = {
@@ -16,8 +17,44 @@ const state = {
 
 export const skeleton = (params) => (params.id ? 'detail' : 'list');
 
+// The live subscription belonging to whichever of this module's three screens
+// is on show. One slot, not a list: `reload()` re-renders without going back
+// through the router, so a screen can replace itself and would otherwise leave
+// its previous handler behind, refetching a list nobody is looking at.
+let watching = null;
+
+function watch(names, fn) {
+  watching?.();
+  watching = onChange(names, fn);
+}
+
+/**
+ * Watch a set of events but act only on the ones this screen is about.
+ *
+ * `onChange` deliberately drops the payload — a list refetches whatever
+ * happened — but a detail screen needs the opposite: it must ignore almost
+ * everything, and the cheapest place to decide that is on the event itself,
+ * before any request is made. A resync still fires it, because after a gap
+ * there is no payload to judge by.
+ */
+function watchOne(names, matches, fn) {
+  watching?.();
+  const offMatched = subscribe(names, (data) => { if (matches(data)) fn(); });
+  // A resync carries no payload to judge by — the point of it is that the
+  // events which would have said so were never delivered — so it always fires.
+  const offResync = subscribe('live:resync', fn);
+  watching = () => { offMatched(); offResync(); };
+}
+
+/** Called by `mount()` in app.js when this module's screen is replaced. */
+export function leave() {
+  watching?.();
+  watching = null;
+}
+
 export async function render(container, params = {}) {
   const hash = window.location.hash.slice(1);
+  leave();
   if (hash.startsWith('/invoices/new')) return editor(container, hash);
   if (params.id) return detail(container, params.id);
   return list(container);
@@ -111,6 +148,12 @@ async function list(container) {
     }
   }
 
+  // Somebody else raising, editing or cancelling an invoice changes what this
+  // list should say — and this is the screen most likely to be left open on a
+  // second monitor all afternoon. `onChange` debounces, so a payment settling
+  // six invoices at once redraws the table once.
+  watch(['invoice:created', 'invoice:updated', 'invoice:cancelled'], refresh);
+
   await refresh();
 }
 
@@ -120,7 +163,20 @@ async function detail(container, invNo) {
   setTitle(`Invoice ${invNo}`);
   const invoice = await api.get(`/invoices/${encodeURIComponent(invNo)}`);
 
+  // Only when it is *this* invoice. Every payment the office takes publishes
+  // `invoice:updated` for the documents it settles, and redrawing a screen
+  // somebody is reading because an unrelated record moved is worse than being
+  // briefly stale. The filter is on the payload, before any fetch.
+  watchOne(['invoice:updated', 'invoice:cancelled'],
+    (data) => data?.inv_no === invoice.inv_no, reload);
+
   container.append(
+    // Above the toolbar, not inside the lines card: this is a fact about the
+    // whole document — part of it cannot be delivered yet — and somebody
+    // opening the invoice to answer "can we ship this?" must not have to reach
+    // the lines table to find out.
+    invoice.short_lines ? shortfallNotice(invoice) : null,
+
     toolbar([
       el('button', { class: 'btn', text: '‹ Back to invoices', onClick: () => { window.location.hash = '#/invoices'; } }),
       el('span', { class: 'spacer' }),
@@ -170,6 +226,14 @@ async function detail(container, invNo) {
       { key: 'unit_price', label: 'Price', align: 'right', render: (r) => money(r.unit_price) },
       { key: 'disc1', label: 'Disc %', align: 'right',
         render: (r) => [r.disc1, r.disc2, r.disc3].filter(Boolean).join(' / ') },
+      // Only drawn for an invoice that has any, so the column does not sit
+      // empty on the thousands that do not.
+      ...(invoice.short_lines ? [{
+        key: 'qty_short', label: 'Short', align: 'right',
+        render: (r) => (r.qty_short
+          ? el('span', { class: 'danger-text', text: qty(r.qty_short) })
+          : el('span', { class: 'hint', text: '—' })),
+      }] : []),
       { key: 'line_total', label: 'Total', align: 'right', render: (r) => money(r.line_total) },
     ], invoice.lines, {
       emptyText: 'This invoice has no stored line detail.',
@@ -186,6 +250,44 @@ async function detail(container, invNo) {
       onRowClick: (row) => { window.location.hash = `#/collections/${encodeURIComponent(row.col_no)}`; },
     }), [], { flush: true }) : null,
   );
+}
+
+/**
+ * The banner on an invoice that sold stock which was not there.
+ *
+ * It says what is owed and, when the shortfall has since been covered, that it
+ * has. The distinction matters more than it looks: the invoice is a permanent
+ * record of what happened, and an office reading it a month later needs to be
+ * able to tell "we are waiting on this" from "we were short at the time and it
+ * was sorted out", which a bare quantity cannot.
+ */
+function shortfallNotice(invoice) {
+  const rows = invoice.shortfalls || [];
+  const outstanding = rows.filter((row) => !row.resolved_at);
+  const settled = outstanding.length === 0 && rows.length > 0;
+
+  const list = rows.map((row) => `${row.stock_code} (${qty(row.qty_short)}`
+    + `${row.unit ? ` ${row.unit}` : ''})`).join(', ');
+
+  return el('p', { class: `notice ${settled ? 'warn' : 'error'}` }, [
+    el('span', { class: 'ico', 'aria-hidden': 'true' }),
+    el('span', {}, [
+      el('strong', {
+        text: settled
+          ? 'This invoice was sold beyond stock, and has since been covered.'
+          : `${outstanding.length} line(s) took more than was on the shelf.`,
+      }),
+      settled
+        ? ` ${list} went below zero when this was raised. Stock has arrived since,`
+          + ' so nothing is outstanding.'
+        : ` ${list} must be delivered from the next purchase. The sale stands and`
+          + ' the customer is owed the full quantity.',
+      ' ',
+      can('report:read')
+        ? el('a', { href: '#/reports/refill', text: 'Open the refill list' })
+        : null,
+    ]),
+  ]);
 }
 
 function statBox(label, value, sub, kind = '') {
@@ -220,6 +322,7 @@ async function editor(container, hash) {
   let priceField = 'price_a';
   const lines = lineEditor({
     priceField,
+    checkStock: true,
     onChange: (subtotal) => {
       subtotalCell.textContent = money(subtotal);
       let net = subtotal;
@@ -261,6 +364,27 @@ async function editor(container, hash) {
   if (preset) {
     api.get(`/customers/${encodeURIComponent(preset)}`).then(applyCustomer).catch(() => {});
   }
+
+  // The single most useful place in the application for a live update.
+  //
+  // Writing an invoice takes a couple of minutes; the quantities on the grid
+  // were read at the moment each code was typed, and somebody at the next
+  // counter is selling from the same shelf the whole time. Without this, the
+  // first anybody hears that the stock went is a warning toast *after* the
+  // save, when the customer is already holding the paper.
+  //
+  // Only the codes on this grid are asked for, and only when something actually
+  // moved — so an editor left open costs one small request per stock change in
+  // the office, and nothing at all while nobody is saving anything.
+  watch(['stock:changed'], async () => {
+    const codes = lines.codes();
+    if (!codes.length) return;
+    const results = await Promise.all(codes.map((code) =>
+      api.get(`/stock/${encodeURIComponent(code)}`).catch(() => null)));
+    const byCode = {};
+    for (const item of results) if (item) byCode[item.code] = item;
+    lines.applyStock(byCode);
+  });
 
   const saveButton = el('button', { class: 'btn primary', text: 'Save invoice' });
 
@@ -315,6 +439,29 @@ async function editor(container, hash) {
     try {
       const invoice = await api.post('/invoices', payload);
       toast(`Invoice ${invoice.inv_no} saved.`, 'success');
+
+      // The invoice saved, and some of it was not on the shelf.
+      //
+      // This is the case the whole feature exists for: the quantities on this
+      // screen were fetched before somebody else's invoice took the same stock,
+      // and the clerk pressed Save against numbers that had already moved. The
+      // sale is not refused — it is worth more than a tidy stock figure — but
+      // it must not be reported as if nothing happened, or the first anyone
+      // hears of it is a delivery that cannot be picked.
+      //
+      // A toast rather than a modal: nothing is required of the person reading
+      // it. The invoice is saved, the buyer has already been told, and the
+      // detail screen they are about to land on carries the same message where
+      // it can be read at leisure.
+      for (const line of invoice.short_now || []) {
+        toast(
+          `${line.description || line.stock_code}: ${qty(line.available)} was on `
+          + `hand and this invoice took ${qty(line.qty)}. ${qty(line.qty_short)} `
+          + 'is owed and has been added to the refill list.',
+          'warn', 'Sold beyond stock',
+        );
+      }
+
       window.location.hash = `#/invoices/${encodeURIComponent(invoice.inv_no)}`;
     } catch (error) {
       reportError(error);

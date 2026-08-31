@@ -6,16 +6,13 @@
 // or stops belongs there, not here.
 
 import { api } from './api.js';
+import { subscribe } from './live.js';
 import { $, clear, el, toast } from './ui.js';
-
-// A minute. These are conditions that change on a fifteen-minute sweep, so
-// asking more often than this would only produce the same answer faster.
-const POLL_MS = 60000;
 
 // The panel is a summary. Anything past this is what "View all" is for.
 const PANEL_LIMIT = 6;
 
-let timer = null;
+let unsubscribe = null;
 let unread = 0;
 let wired = false;
 
@@ -130,51 +127,63 @@ async function announceNew() {
   }
 }
 
-async function poll({ announce = true } = {}) {
+// Ask for the count, and announce anything new if it went up.
+//
+// This used to run on a sixty-second timer. It now runs when the server says
+// something changed, which is the same work at a fraction of the frequency: the
+// conditions behind these alerts are swept every fifteen minutes and change far
+// less often than that, so all but a handful of those polls were asking a
+// question whose answer had not moved.
+async function refresh({ announce = true } = {}) {
   let count;
   try {
     ({ unread: count } = await api.get('/notifications/unread-count'));
   } catch {
-    // A failed poll is not worth telling anybody about; the next one is a
-    // minute away and the badge keeps its last honest value.
+    // Not worth telling anybody about: the badge keeps its last honest value
+    // and the next event, or the next reconnect, corrects it.
     return;
   }
   const rose = count > unread;
   setUnread(count);
   if (rose && announce) await announceNew();
+  // A panel standing open while an alert arrives should show it, rather than
+  // showing a list that disagrees with the badge above it.
+  if (!$('#notif-menu')?.hidden) await fillPanel();
 }
 
 export function startNotifications() {
   stopNotifications();
-  // First answer immediately: the interesting case is signing in to find that
-  // something happened overnight, and waiting a minute for it is a poor way to
-  // learn that. Nothing is toasted on this pass — everything is new to a page
+  // Asked once on arrival: the interesting case is signing in to find that
+  // something happened overnight, and there is no event coming for what was
+  // already true. Nothing is toasted on this pass — everything is new to a page
   // that has just loaded, and a stack of six toasts on arrival is not a
   // welcome.
-  poll({ announce: false });
-  timer = setInterval(poll, POLL_MS);
+  refresh({ announce: false });
+
+  unsubscribe = subscribe(
+    [
+      // Something was raised or resolved that this account may be able to see.
+      // The event says only that, never the row: unread-ness is per person and
+      // could not be expressed in a payload broadcast to everybody.
+      'notification:changed',
+      // This same account marked something read somewhere else — the office PC
+      // while standing at the counter one. The badge must not disagree with
+      // itself across two windows.
+      'notification:read',
+      // The stream came back with a gap the server could not fill.
+      'live:resync',
+    ],
+    () => { refresh(); },
+  );
 }
 
 export function stopNotifications() {
-  if (timer) clearInterval(timer);
-  timer = null;
+  unsubscribe?.();
+  unsubscribe = null;
   setUnread(0);
   announced.clear();
   closeNotifications();
 }
-
-// A hidden tab runs no useful poll and a machine left on overnight would
-// otherwise make several hundred pointless requests before anybody came back.
-document.addEventListener('visibilitychange', () => {
-  if (!timer && !document.hidden) return;
-  if (document.hidden) {
-    clearInterval(timer);
-    timer = null;
-  } else {
-    poll();
-    timer = setInterval(poll, POLL_MS);
-  }
-});
 
 /* ------------------------------------------------------------- the panel -- */
 

@@ -10,6 +10,7 @@ import { initTheme } from './theme.js';
 import {
   closeNotifications, startNotifications, stopNotifications, wireNotifications,
 } from './notify.js';
+import { announce, onLiveState, startLive, stopLive } from './live.js';
 
 import * as home from './views/home.js';
 import * as dashboard from './views/dashboard.js';
@@ -129,6 +130,10 @@ const NAV = [
     { path: '/maintenance/purge', label: 'Purging of Records', icon: 'trash', permission: 'maintenance:run' },
     { path: '/archive/summary', label: 'Archive Inquiry', icon: 'archive-find', permission: 'report:read' },
     { path: '/reports/depleted', label: 'Depleted Stocks', icon: 'box-down', permission: 'report:read' },
+    // Next to Depleted Stocks because they are read together and easily
+    // confused: that one is what has run low, this one is what has already been
+    // promised to a customer and is not on the shelf.
+    { path: '/reports/refill', label: 'Needs Refilling', icon: 'refill', permission: 'report:read' },
     { path: '/admin', label: 'Users & Audit', icon: 'shield', permission: 'admin:users' },
   ] },
 ];
@@ -433,10 +438,12 @@ function showLogin(message = '') {
   showLoginError(message);
 
   // Every way back to this screen comes through here — signing out, an expired
-  // session, a rejected call — so it is the one place the poll has to be
-  // stopped. Left running it would keep asking a server that has already said
-  // 401, and the next person to sign in would inherit the last one's badge.
+  // session, a rejected call — so it is the one place the live channel has to
+  // be stopped. Left running it would hold a stream against a server that has
+  // already said 401, and the next person to sign in would inherit the last
+  // one's badge and the last one's position in the event log.
   stopNotifications();
+  stopLive();
 
   // A password left revealed must not still be on screen for whoever signs in
   // next, and the caps warning belongs to the attempt that raised it.
@@ -466,6 +473,10 @@ async function showShell() {
 
   buildNav();
   setupSearch();
+  // The stream first: `startNotifications()` registers its subscriptions on it,
+  // and a subscription made before the connection opens is still delivered to —
+  // the handler map outlives any one connection.
+  startLive();
   startNotifications();
   if (started) resolve();
 
@@ -623,6 +634,38 @@ function wireChrome() {
   // An anchor, so the router handles it; the menu just has to get out of the way.
   $('#btn-settings').addEventListener('click', closeAccountMenu);
   $('#menu-toggle').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
+
+  // The state of the live channel, on the top bar beside the bell. Hidden while
+  // signed out, and silent while it is working — an indicator that is always
+  // lit is one nobody reads, so this one only asks to be noticed when the
+  // connection has gone and the screen may therefore be standing still.
+  onLiveState((live) => {
+    const dot = $('#live-dot');
+    if (!dot) return;
+    dot.hidden = live === 'idle';
+    dot.dataset.state = live;
+    dot.title = live === 'live'
+      ? 'Connected — this screen updates as things happen'
+      : 'Reconnecting — this screen may be out of date';
+  });
+
+  // Somebody else's invoice took stock that was not there. This is the one
+  // event worth interrupting a person over rather than quietly redrawing a
+  // table: it is a job for whoever buys, and it arrives while they are looking
+  // at something else entirely.
+  //
+  // The clerk who caused it is skipped — they were told on their own screen at
+  // the moment they saved, and being told twice reads as two separate problems.
+  announce('stock:short', (data) => {
+    if (!data?.items?.length || data.by === session.user?.username) return '';
+    const [first] = data.items;
+    if (data.items.length === 1) {
+      return `${first.name} on ${data.inv_no}: ${first.qty_short} more was sold `
+        + 'than was on the shelf.';
+    }
+    return `${data.items.length} items on ${data.inv_no} were sold beyond what `
+      + 'was on hand.';
+  }, { kind: 'warn', title: 'Stock needs refilling' });
 
   wireNotifications();
   // The panel closes the account menu from this side, because notify.js cannot

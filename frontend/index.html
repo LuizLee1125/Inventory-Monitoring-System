@@ -122,6 +122,11 @@
       </div>
 
       <div class="topbar-right">
+        <!-- The live channel's state. Quiet while it works, and it only asks to
+             be noticed once the connection has gone — at which point the screen
+             has stopped updating itself and the reader needs to know that. -->
+        <span class="live-dot" id="live-dot" data-state="idle" hidden
+              role="status" aria-live="polite"></span>
         <button class="bell" id="btn-bell" type="button" title="Notifications"
                 aria-haspopup="menu" aria-expanded="false" aria-label="Notifications">
           <span class="ico" aria-hidden="true"></span>

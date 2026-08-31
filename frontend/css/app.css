@@ -206,6 +206,15 @@
   --nav-box-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.6' y='4.5' width='12.8' height='11' rx='1.4'/%3E%3Cpath d='M10 7.4v5'/%3E%3Cpath d='m7.6 10 2.4 2.4L12.4 10'/%3E%3C/svg%3E");
   --nav-box-down-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.6' y='4.5' width='12.8' height='11' rx='1.4'/%3E%3Cpath d='M10 7.4v5'/%3E%3Cpath d='m7.6 10 2.4 2.4L12.4 10'/%3E%3C/svg%3E");
 
+  /* Needs Refilling. Deliberately not `box-down` mirrored: the two sit next to
+     each other in the rail, and a mark that is another mark upside down
+     identifies neither at a glance. This one is an open-topped container with
+     the arrow rising clear of it — a different silhouette, not a reflection.
+     The arrowhead sits 4.4 units above the container's rim, which is the
+     closest anything may come at the active weight's 2.5 stroke. */
+  --nav-refill: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.4 10.6v4.2a1.4 1.4 0 0 0 1.4 1.4h8.4a1.4 1.4 0 0 0 1.4-1.4v-4.2'/%3E%3Cpath d='M10 12.6V3.6'/%3E%3Cpath d='m7.4 6.2 2.6-2.6 2.6 2.6'/%3E%3C/svg%3E");
+  --nav-refill-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.4 10.6v4.2a1.4 1.4 0 0 0 1.4 1.4h8.4a1.4 1.4 0 0 0 1.4-1.4v-4.2'/%3E%3Cpath d='M10 12.6V3.6'/%3E%3Cpath d='m7.4 6.2 2.6-2.6 2.6 2.6'/%3E%3C/svg%3E");
+
   --nav-shield: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 2.9 4 5.1v4.3c0 3.7 2.5 7.1 6 7.7 3.5-.6 6-4 6-7.7V5.1Z'/%3E%3Ccircle cx='10' cy='8.6' r='1.9'/%3E%3Cpath d='M6.9 13.9a3.6 3.6 0 0 1 6.2 0'/%3E%3C/svg%3E");
   --nav-shield-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 2.9 4 5.1v4.3c0 3.7 2.5 7.1 6 7.7 3.5-.6 6-4 6-7.7V5.1Z'/%3E%3Ccircle cx='10' cy='8.6' r='1.9'/%3E%3Cpath d='M6.9 13.9a3.6 3.6 0 0 1 6.2 0'/%3E%3C/svg%3E");
 
@@ -1343,6 +1352,57 @@ a { color: var(--primary); }
   font-weight: var(--fw-bold);
 }
 .notice.warn { background: var(--warn-soft); color: var(--warn); }
+.notice.error { background: var(--danger-soft); color: var(--danger); }
+
+/* A checkbox with its explanation beside it, inside a `field()`.
+   The box keeps its own size while the sentence wraps, which is why this is a
+   flex row and not two grid cells: the explanation is usually longer than the
+   label above it. */
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  color: var(--text-dim);
+}
+.check input[type="checkbox"] {
+  flex: none;
+  width: 16px; height: 16px;
+  margin-top: 1px;
+  accent-color: var(--primary);
+}
+
+/* --------------------------------------------------------- the live dot -- */
+/* The state of the event stream, beside the bell.
+
+   It is 7px and it is silent while the connection is up, because an indicator
+   that is always lit is one nobody reads. The state worth a glance is the other
+   one: the stream has gone, so nothing on this screen is arriving by itself any
+   more, and a figure somebody is about to act on may already be wrong.
+
+   That state pulses. It is the only thing in the interface that animates
+   without having been asked to, which is exactly why it is small and why the
+   animation is slow — 2.4s, well outside the vocabulary in `Motion`, because it
+   is a condition rather than a response to anything the reader just did. */
+.live-dot {
+  flex: none;
+  width: 7px; height: 7px;
+  margin-right: calc(var(--sp-1) * -1);
+  border-radius: var(--radius-full);
+  background: var(--ok);
+  transition: background-color var(--dur) var(--ease);
+}
+.live-dot[data-state="connecting"],
+.live-dot[data-state="reconnecting"] {
+  background: var(--warn);
+  animation: live-pulse 2.4s var(--ease) infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .25; }
+}
 
 /* Where the backups are, said plainly and once, on the screen of somebody who
    is probably not at that machine. */
@@ -2344,6 +2404,32 @@ input[type="date"] { min-height: 34px; }
   border-radius: var(--radius-sm);
 }
 .lines .num input { text-align: right; }
+
+/* A quantity larger than what is on the shelf.
+
+   Warned, never blocked: for almost every item here the sale goes through and
+   the shortfall becomes a note to the buyer, so this is information rather than
+   an error, and it is coloured `warn` to say so. The one item that genuinely
+   cannot be oversold gets `.blocking` and the danger colour, because that line
+   really will be refused.
+
+   The note sits under the field rather than beside it: the quantity column is
+   95px wide and a sentence next to the input would have pushed the price and
+   discount columns off a laptop screen. */
+.lines input.over {
+  border-color: var(--warn);
+  background-color: var(--warn-soft);
+}
+.lines .line-warn {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-tight);
+  text-align: right;
+  color: var(--warn);
+}
+.lines .line-warn.blocking { color: var(--danger); font-weight: var(--fw-semi); }
+
 .lines td.total {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -3132,4 +3218,12 @@ input[type="date"] { min-height: 34px; }
      nav's arrival stagger is dropped entirely: twenty-four delays of 1ms is
      still twenty-four things starting at different times. */
   .nav a { animation-delay: 0ms !important; }
+  /* The live dot's pulse is stopped by the rule above, and it was the whole of
+     how the disconnected state announced itself. The colour alone is a 7px
+     difference; a ring around it is a shape difference, which survives without
+     motion and without relying on colour vision. */
+  .live-dot[data-state="connecting"],
+  .live-dot[data-state="reconnecting"] {
+    box-shadow: 0 0 0 2px var(--warn-soft);
+  }
 }

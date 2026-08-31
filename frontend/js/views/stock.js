@@ -7,13 +7,25 @@ import {
   toolbar,
 } from '../ui.js';
 import { can, page, setTitle } from '../app.js';
+import { onChange, subscribe } from '../live.js';
 
 const state = { q: '', division: '', flag: '', sort: 'code', direction: 'asc', page: 1 };
 
 // One module, two screens: a searchable list and one item's detail page.
 export const skeleton = (params) => (params.code ? 'detail' : 'list');
 
+// One live subscription for whichever screen is showing. `reload()` re-renders
+// without going through the router, so it has to be replaced rather than added
+// to — see the same note in `views/invoices.js`.
+let watching = null;
+
+export function leave() {
+  watching?.();
+  watching = null;
+}
+
 export async function render(container, params = {}) {
+  leave();
   if (params.code) return detail(container, params.code);
   return list(container);
 }
@@ -108,6 +120,11 @@ async function list(container) {
     }
   }
 
+  // Quantities are the one thing on this screen that goes stale within
+  // minutes — every invoice, receipt, return and adjustment in the office moves
+  // one. Debounced, so a purchase receipting forty lines redraws the table once.
+  watching = onChange('stock:changed', refresh);
+
   await refresh();
 }
 
@@ -118,6 +135,15 @@ async function detail(container, code) {
   const item = await api.get(`/stock/${encodeURIComponent(code)}`);
   const moves = await api.get(`/stock/${encodeURIComponent(code)}/moves`, { limit: 60 });
 
+  // Only when this item moved. `stock:changed` carries every code a document
+  // touched, so the test is membership rather than equality — and a resync,
+  // which carries no codes at all, always redraws.
+  const offChanged = subscribe('stock:changed', (data) => {
+    if (data?.codes?.includes(item.code)) reload();
+  });
+  const offResync = subscribe('live:resync', reload);
+  watching = () => { offChanged(); offResync(); };
+
   const facts = (rows) => el('div', { class: 'form-grid' }, rows.map(([label, value]) =>
     el('div', { class: 'field' }, [
       el('span', { text: label }),
@@ -125,6 +151,23 @@ async function detail(container, code) {
     ])));
 
   container.append(
+    // What is owed on this item, if anything. It sits above everything else
+    // because it changes the meaning of the figure below it: "0 on hand" and
+    // "0 on hand, 30 already sold" are different situations, and the second one
+    // is the one somebody has to do something about.
+    item.qty_short ? el('p', { class: 'notice error' }, [
+      el('span', { class: 'ico', 'aria-hidden': 'true' }),
+      el('span', {}, [
+        el('strong', { text: `${qty(item.qty_short)} ${item.unit || ''}`.trim()
+          + ' has been sold and not delivered.' }),
+        ' Invoices have already promised more of this item than was on the shelf.'
+        + ' The next purchase clears it automatically. ',
+        can('report:read')
+          ? el('a', { href: '#/reports/refill', text: 'Open the refill list' })
+          : null,
+      ]),
+    ]) : null,
+
     toolbar([
       el('button', { class: 'btn', text: '‹ Back to stock', onClick: () => { window.location.hash = '#/stock'; } }),
       el('span', { class: 'spacer' }),
@@ -150,6 +193,9 @@ async function detail(container, code) {
       ['Lot number', item.lot_no],
       ['Expiry', date(item.expiry_date)],
       ['Supplier', item.supplier_name ? `${item.supplier_code} — ${item.supplier_name}` : item.supplier_code],
+      ['Selling below zero', item.allow_oversell === 0
+        ? 'Blocked — an invoice cannot take more than is on hand'
+        : 'Allowed — the sale goes through and a refill note is raised'],
       ['Prices D / E', `${money(item.price_d)} / ${money(item.price_e)}`],
       ['Last transaction', date(item.last_txn)],
       ['Price updated', date(item.price_updated)],
@@ -209,6 +255,25 @@ function editItem(item) {
     field('Price D', input('price_d', { type: 'number', step: '0.01', value: item?.price_d ?? 0, class: 'num' })),
     field('Price E', input('price_e', { type: 'number', step: '0.01', value: item?.price_e ?? 0, class: 'num' })),
     field('Remarks', input('remarks', { value: item?.remarks || '' }), { span: true }),
+
+    // On by default, and on for every item carried over from the DOS system,
+    // because that is what it did: nothing ever checked stock before writing an
+    // invoice. Turning it off is the deliberate exception for something that
+    // genuinely cannot be promised — a controlled drug, a single-source import.
+    //
+    // It must be in this form even though it is rarely touched: `_stock_values`
+    // rebuilds the whole row on save, so a field left out of the form would be
+    // reset to its default every time anybody edited a price.
+    // A div, not a label: `field()` already wraps this in one, and a nested
+    // label is invalid and stops the outer one associating with the control.
+    field('Selling below zero', el('div', { class: 'check' }, [
+      input('allow_oversell', {
+        type: 'checkbox',
+        checked: item ? item.allow_oversell !== 0 : true,
+      }),
+      el('span', { text: 'Let an invoice take more than is on hand, and raise a '
+        + 'refill note instead of refusing the sale' }),
+    ]), { span: true }),
   ]);
 
   modal({

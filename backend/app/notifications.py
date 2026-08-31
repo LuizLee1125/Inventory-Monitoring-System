@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
-from . import config, db
+from . import config, db, events, replenishment
 
 # --------------------------------------------------------------------------- #
 # conditions
@@ -139,6 +139,34 @@ def _conditions() -> list[Condition]:
             # to be in the severity rather than left to the reader.
             severity=lambda r: "error" if (r["days_left"] or 0) < 0 else "warn",
         ),
+        # Sold and not on the shelf. This one is not a property of the stock row
+        # the way the three above are — it is an obligation created by a
+        # document, so it reads `stock_shortfalls` rather than `stock`, and it
+        # closes when `replenishment.resolve_settled()` closes the rows behind
+        # it rather than when a quantity crosses a line.
+        #
+        # `purchase:read`, not `stock:read`: the answer to "we sold thirty we did
+        # not have" is a purchase order, so it goes to the people who raise them.
+        # The clerk who sold it was told on screen at the moment of the save and
+        # does not need a bell for it as well.
+        Condition(
+            kind="stock.refill",
+            permission="purchase:read",
+            entity="stock",
+            sql=replenishment.OPEN_BY_ITEM_SQL,
+            params=(),
+            key=lambda r: f"stock.refill:{r['code']}",
+            title=lambda r: f"{r['name']} needs refilling",
+            body=lambda r: (
+                f"{r['code']} — {_qty(r, 'qty_short')} {r['unit'] or ''}".rstrip()
+                + " sold beyond what was on hand"
+                + (f" across {r['documents']} invoices" if r["documents"] > 1
+                   else f" on {r['latest_doc']}")
+                + f", {_qty(r)} on hand."),
+            report="/reports/refill",
+            rollup=lambda n: f"{n:,} items were sold beyond what was on hand",
+            severity="error",
+        ),
     ]
 
 
@@ -158,16 +186,25 @@ def raise_alert(kind: str, title: str, *, body: str = "", severity: str = "warn"
         _upsert(conn, key or kind, kind=kind, severity=severity, title=title,
                 body=body, entity=entity, entity_id=entity_id,
                 permission=permission)
+    events.publish("notification:changed", {"kind": kind, "opened": 1, "closed": 0},
+                   permission=permission)
 
 
 def resolve(key: str) -> None:
     """Close an alert by its key, if it is open. A no-op when it is not."""
     with db.transaction() as conn:
-        conn.execute(
+        cur = conn.execute(
             "UPDATE notifications SET resolved_at = ? "
             "WHERE dedupe_key = ? AND resolved_at IS NULL",
             (db.now(), key),
         )
+        closed = cur.rowcount or 0
+        permission = db.scalar(
+            "SELECT permission FROM notifications WHERE dedupe_key = ?", (key,), "")
+    if closed:
+        events.publish("notification:changed",
+                       {"kind": key.split(":")[0], "opened": 0, "closed": closed},
+                       permission=permission)
 
 
 def _upsert(conn, key: str, **fields: Any) -> None:
@@ -223,12 +260,8 @@ def _chunks(values: Sequence[Any], size: int = 400) -> Iterable[Sequence[Any]]:
         yield values[start:start + size]
 
 
-def sweep() -> dict:
-    """One pass over every condition. Returns what changed, for the log.
-
-    Runs on a worker thread from the same tick as the backup schedule, so it
-    must not assume a request context and must not raise: a failing sweep is a
-    missing alert, and it must never take the server down with it.
+def _sweep_condition(condition: Condition) -> dict:
+    """One condition, opened and closed against what its query returns now.
 
     A condition matching more than `NOTIFY_ROLLUP_AT` rows collapses to a single
     alert carrying the count and a link to the report. That is not a cap or a
@@ -237,66 +270,115 @@ def sweep() -> dict:
     one row saying "two thousand". The two forms are mutually exclusive per
     kind, and crossing the threshold in either direction closes the other.
     """
+    rows = db.query(condition.sql, condition.params)
+    rolled = len(rows) > config.NOTIFY_ROLLUP_AT
+
+    if rolled:
+        # One row, and the examples in the body so it is not just a number.
+        examples = ", ".join(str(r.get("code") or "") for r in rows[:3])
+        wanted = {
+            condition.rollup_key: dict(
+                kind=condition.kind,
+                severity=max((condition.severity(r) for r in rows),
+                             key=lambda s: ("info", "warn", "error").index(s)),
+                title=condition.rollup(len(rows)),
+                body=f"Including {examples}"
+                     + (f" and {len(rows) - 3:,} more." if len(rows) > 3 else "."),
+                entity="report",
+                entity_id=condition.report,
+                permission=condition.permission,
+            )
+        }
+    else:
+        wanted = {
+            condition.key(row): dict(
+                kind=condition.kind,
+                severity=condition.severity(row),
+                title=condition.title(row),
+                body=condition.body(row),
+                entity=condition.entity,
+                entity_id=str(row.get("code") or ""),
+                permission=condition.permission,
+            )
+            for row in rows
+        }
+
+    with db.transaction() as conn:
+        known = {r["dedupe_key"]: r["id"] for r in conn.execute(
+            "SELECT id, dedupe_key FROM notifications "
+            "WHERE kind = ? AND resolved_at IS NULL", (condition.kind,))}
+
+        # Close first, in batches: a first sweep after the threshold is
+        # crossed has two thousand per-item rows to retire, and SQLite caps
+        # the parameters one statement may carry.
+        stale = [id_ for key, id_ in known.items() if key not in wanted]
+        for batch in _chunks(stale):
+            conn.execute(
+                f"UPDATE notifications SET resolved_at = ? WHERE id IN "
+                f"({','.join('?' * len(batch))})",
+                (db.now(), *batch),
+            )
+
+        opened = 0
+        for key, fields in wanted.items():
+            if key not in known:
+                opened += 1
+            _upsert(conn, key, **fields)
+
+    # Announced after the commit, never inside it: a client told about an alert
+    # will ask for it, and would otherwise be answered by a reader that cannot
+    # see it yet. The event carries no row — unread-ness is per person and a
+    # broadcast payload cannot express it — so it says only that this kind
+    # changed, and each client re-reads its own count. That is one request per
+    # real change, against the sixty an hour per workstation the poll it
+    # replaced was making whether or not anything had happened.
+    if opened or stale:
+        events.publish("notification:changed",
+                       {"kind": condition.kind, "opened": opened,
+                        "closed": len(stale)},
+                       permission=condition.permission)
+
+    return {"opened": opened, "closed": len(stale)}
+
+
+def sweep() -> dict:
+    """One pass over every condition. Returns what changed, for the log.
+
+    Runs on a worker thread from the same tick as the backup schedule, so it
+    must not assume a request context and must not raise: a failing sweep is a
+    missing alert, and it must never take the server down with it.
+    """
+    # The net under every path that raises stock. `resolve_settled()` is already
+    # called by receiving and by an inventory adjustment; doing it here as well
+    # means a route added later that forgets to call it costs a stale alert for
+    # fifteen minutes rather than forever.
+    with db.transaction() as conn:
+        replenishment.resolve_settled(conn)
+
     opened = 0
     closed = 0
-
     for condition in _conditions():
-        rows = db.query(condition.sql, condition.params)
-        rolled = len(rows) > config.NOTIFY_ROLLUP_AT
-
-        if rolled:
-            # One row, and the examples in the body so it is not just a number.
-            examples = ", ".join(str(r.get("code") or "") for r in rows[:3])
-            wanted = {
-                condition.rollup_key: dict(
-                    kind=condition.kind,
-                    severity=max((condition.severity(r) for r in rows),
-                                 key=lambda s: ("info", "warn", "error").index(s)),
-                    title=condition.rollup(len(rows)),
-                    body=f"Including {examples}"
-                         + (f" and {len(rows) - 3:,} more." if len(rows) > 3 else "."),
-                    entity="report",
-                    entity_id=condition.report,
-                    permission=condition.permission,
-                )
-            }
-        else:
-            wanted = {
-                condition.key(row): dict(
-                    kind=condition.kind,
-                    severity=condition.severity(row),
-                    title=condition.title(row),
-                    body=condition.body(row),
-                    entity=condition.entity,
-                    entity_id=str(row.get("code") or ""),
-                    permission=condition.permission,
-                )
-                for row in rows
-            }
-
-        with db.transaction() as conn:
-            known = {r["dedupe_key"]: r["id"] for r in conn.execute(
-                "SELECT id, dedupe_key FROM notifications "
-                "WHERE kind = ? AND resolved_at IS NULL", (condition.kind,))}
-
-            # Close first, in batches: a first sweep after the threshold is
-            # crossed has two thousand per-item rows to retire, and SQLite caps
-            # the parameters one statement may carry.
-            stale = [id_ for key, id_ in known.items() if key not in wanted]
-            for batch in _chunks(stale):
-                conn.execute(
-                    f"UPDATE notifications SET resolved_at = ? WHERE id IN "
-                    f"({','.join('?' * len(batch))})",
-                    (db.now(), *batch),
-                )
-            closed += len(stale)
-
-            for key, fields in wanted.items():
-                if key not in known:
-                    opened += 1
-                _upsert(conn, key, **fields)
-
+        counts = _sweep_condition(condition)
+        opened += counts["opened"]
+        closed += counts["closed"]
     return {"opened": opened, "closed": closed}
+
+
+def sweep_kind(kind: str) -> dict:
+    """Re-evaluate one condition immediately, for something that has just
+    happened and should not wait fifteen minutes to be said.
+
+    Used by invoicing: an item sold below zero should reach the buyer's bell
+    while the customer is still at the counter. Going through the same sweep as
+    the timer does — rather than calling `raise_alert()` directly — is what keeps
+    the wording, the severity and the roll-up threshold identical between the
+    two. A hand-written alert would drift from the swept one, and the pair would
+    then flip-flop every quarter of an hour as each rewrote the other.
+    """
+    for condition in _conditions():
+        if condition.kind == kind:
+            return _sweep_condition(condition)
+    return {"opened": 0, "closed": 0}
 
 
 # --------------------------------------------------------------------------- #

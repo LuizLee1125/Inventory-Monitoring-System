@@ -4,13 +4,26 @@ Creating an invoice is one transaction that writes the header, the lines, a
 stock movement per line, decrements stock on hand, and raises the customer's
 balance. Either all of it lands or none of it does - the legacy system could
 leave a half-posted invoice behind if a workstation died mid-save.
+
+**Two clerks, one item.** An item shows 100. One clerk invoices 80 and saves;
+the second, whose screen was fetched before that save, invoices 50. The second
+invoice goes through. That is deliberate: for anything the office can reorder
+quickly, a sale is worth more than a tidy stock figure, and the clerk was
+looking at a number that was correct when it was drawn.
+
+What must not happen is that it goes through *silently*. The 30 that were
+promised and are not there become a row in `stock_shortfalls`, a refill alert to
+whoever buys, and a line on the invoice marked short. `stock.allow_oversell`
+turns the concession off per item, for the few that genuinely cannot be
+promised; see the schema comment beside the column.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import db
+from .. import db, events, replenishment
+from .. import notifications as alerts
 from ..deps import check_version, clean, money, paged_response, paging, require
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -37,6 +50,10 @@ def _load(inv_no: str) -> dict:
         "SELECT ca.col_no, c.col_date, ca.amount, c.method, ca.check_no "
         "FROM collection_applications ca JOIN collections c ON c.col_no = ca.col_no "
         "WHERE ca.inv_no = ? ORDER BY c.col_date", (inv_no,))
+    # Only fetched for the few invoices that have any. `short_lines` is on the
+    # header precisely so the list screen never has to ask this question.
+    header["shortfalls"] = (replenishment.open_for_document(inv_no)
+                            if header.get("short_lines") else [])
     return header
 
 
@@ -134,6 +151,16 @@ def create_invoice(payload: dict,
         gross = 0.0
         cost_total = 0.0
 
+        # Stock on hand as each line leaves it, keyed by code.
+        #
+        # This is not about the other clerk - `db.transaction()` is
+        # BEGIN IMMEDIATE, so two savers genuinely serialise and the balance
+        # arithmetic is safe. It is about *this* document: an invoice listing
+        # the same code on two lines used to write the pre-invoice balance on
+        # both, because every line re-read the row fetched at the top. One
+        # clerk, one document, and the ledger's `balance_after` was wrong.
+        running: dict[str, float] = {}
+
         for index, raw in enumerate(raw_lines, start=1):
             code = clean(raw.get("stock_code"), upper=True)
             qty = money(raw.get("qty"))
@@ -147,6 +174,24 @@ def create_invoice(payload: dict,
             if item is None:
                 raise HTTPException(status_code=404,
                                     detail=f"Line {index}: no stock item {code}.")
+
+            available = running.get(code, item["qty_on_hand"])
+            short = replenishment.shortfall(available, qty)
+
+            # The one case that refuses. An item marked not-oversellable cannot
+            # be promised from stock that is not there, so the clerk is told the
+            # real number rather than discovering it at the loading bay.
+            if short > 0 and not item["allow_oversell"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Line {index}: {code} has {max(0.0, available):,.2f} "
+                           f"{item['unit'] or ''}".rstrip()
+                           + f" on hand and this line needs {qty:,.2f}. "
+                             f"This item cannot be sold beyond what is in stock — "
+                             f"reduce the quantity or receive the purchase first.")
+
+            new_qty = round(available - qty, 2)
+            running[code] = new_qty
 
             unit_price = money(raw.get("unit_price")) or item[price_column]
             ld1, ld2, ld3 = (money(raw.get(k)) for k in ("disc1", "disc2", "disc3"))
@@ -162,11 +207,14 @@ def create_invoice(payload: dict,
                 "disc1": ld1, "disc2": ld2, "disc3": ld3, "line_total": line_total,
                 "lot_no": item["lot_no"], "expiry_date": item["expiry_date"],
                 "division": item["division"], "category": item["category"],
-                "new_qty": round(item["qty_on_hand"] - qty, 2),
+                "new_qty": new_qty,
+                "available": max(0.0, available), "qty_short": short,
             })
 
         if not prepared:
             raise HTTPException(status_code=400, detail="Add at least one line.")
+
+        short_lines = [line for line in prepared if line["qty_short"] > 0]
 
         subtotal = round(sum(line["line_total"] for line in prepared), 2)
         net = discounted(subtotal, d1, d2, d3)
@@ -184,15 +232,16 @@ def create_invoice(payload: dict,
                                  inv_date, due_date, terms_text, terms_days, price_cat,
                                  salesman, remarks, gross, disc1, disc2, disc3,
                                  discount_amt, net_amount, cost_amount, paid_amount,
-                                 balance, status, posted_at, created_at, created_by)
-            VALUES (?,?,?,?,?,?,date(?, ?),?,?,?,?,?,?,?,?,?,?,?,?,0,?,'OPEN',?,?,?)
+                                 balance, status, short_lines,
+                                 posted_at, created_at, created_by)
+            VALUES (?,?,?,?,?,?,date(?, ?),?,?,?,?,?,?,?,?,?,?,?,?,0,?,'OPEN',?,?,?,?)
             """,
             (inv_no, customer_code, customer["name"], customer["address"],
              customer["city"], inv_date, inv_date, f"+{terms_days} day",
              clean(payload.get("terms_text")) or customer["terms_text"], terms_days,
              price_cat, clean(payload.get("salesman"), upper=True) or customer["salesman"],
              clean(payload.get("remarks")), round(gross, 2), d1, d2, d3,
-             round(gross - net, 2), net, round(cost_total, 2), net,
+             round(gross - net, 2), net, round(cost_total, 2), net, len(short_lines),
              db.now(), db.now(), user["username"]),
         )
 
@@ -201,11 +250,21 @@ def create_invoice(payload: dict,
             conn.execute(
                 "INSERT INTO invoice_lines(inv_no, line_no, stock_code, description,"
                 " qty, unit, unit_price, unit_cost, disc1, disc2, disc3, line_total,"
-                " lot_no, expiry_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " lot_no, expiry_date, qty_short) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (inv_no, line["line_no"], line["stock_code"], line["description"],
                  line["qty"], line["unit"], line["unit_price"], line["unit_cost"],
                  line["disc1"], line["disc2"], line["disc3"], line["line_total"],
-                 line["lot_no"], line["expiry_date"]))
+                 line["lot_no"], line["expiry_date"], line["qty_short"]))
+            if line["qty_short"] > 0:
+                # In the same transaction as the movement that caused it, so the
+                # obligation and the negative balance can never disagree.
+                replenishment.record(
+                    conn, doc_no=inv_no, doc_date=inv_date,
+                    stock_code=line["stock_code"], description=line["description"],
+                    unit=line["unit"], qty_requested=line["qty"],
+                    qty_available=line["available"], qty_short=line["qty_short"],
+                    on_hand_after=line["new_qty"], customer_code=customer_code,
+                    username=user["username"])
             conn.execute(
                 "INSERT INTO stock_moves(move_type, doc_no, doc_date, stock_code,"
                 " description, qty, unit, unit_cost, unit_price, line_total,"
@@ -227,9 +286,55 @@ def create_invoice(payload: dict,
             "purchases = ROUND(purchases + ?, 2), last_txn = ?, version = version + 1 "
             "WHERE code = ?", (net, net, inv_date, customer_code))
         db.audit(conn, user["username"], "create", "invoice", inv_no,
-                 f"{customer_code} {net:,.2f}")
+                 f"{customer_code} {net:,.2f}"
+                 + (f" — {len(short_lines)} line(s) short" if short_lines else ""))
 
-    return _load(inv_no)
+    # Everything below here is after the commit, and deliberately so: an alert or
+    # an event published inside the transaction would be visible to a client that
+    # then asked for an invoice the readers cannot see yet, and would survive a
+    # rollback as an announcement of something that never happened.
+
+    if short_lines:
+        # Straight through the ordinary sweep rather than a hand-written
+        # `raise_alert`, so the wording, the severity and the roll-up threshold
+        # are the same ones the fifteen-minute timer would produce. Two code
+        # paths writing the same alert differently would flip-flop every quarter
+        # of an hour as each rewrote the other.
+        alerts.sweep_kind("stock.refill")
+
+    batch = events.batch()
+    batch.add("invoice:created",
+              {"inv_no": inv_no, "customer_code": customer_code,
+               "customer_name": customer["name"], "net_amount": net,
+               "short_lines": len(short_lines), "by": user["username"]},
+              permission="invoice:read")
+    batch.stock_changed(*(line["stock_code"] for line in prepared))
+    if short_lines:
+        # Its own event, so a screen can react to *this* without listening to
+        # every stock movement in the building. The permission matches the alert:
+        # the answer to a shortfall is a purchase order.
+        batch.add("stock:short",
+                  {"inv_no": inv_no, "by": user["username"],
+                   "items": [{"code": line["stock_code"],
+                              "name": line["description"],
+                              "qty_short": line["qty_short"],
+                              "on_hand": line["new_qty"]}
+                             for line in short_lines]},
+                  permission="purchase:read")
+    batch.flush()
+
+    invoice = _load(inv_no)
+    # Named separately from `shortfalls` on the loaded document: this is what
+    # went short *on this save*, which is what the clerk who just pressed the
+    # button needs told, and it stays right even if the item is refilled a
+    # minute later and the stored rows resolve.
+    invoice["short_now"] = [
+        {"stock_code": line["stock_code"], "description": line["description"],
+         "unit": line["unit"], "qty": line["qty"], "available": line["available"],
+         "qty_short": line["qty_short"], "on_hand_after": line["new_qty"]}
+        for line in short_lines
+    ]
+    return invoice
 
 
 @router.put("/{inv_no}")
@@ -255,6 +360,8 @@ def update_invoice(inv_no: str, payload: dict,
              clean(payload.get("terms_text")), int(payload.get("terms_days") or 0),
              f"+{int(payload.get('terms_days') or 0)} day", inv_no))
         db.audit(conn, user["username"], "update", "invoice", inv_no)
+    events.publish("invoice:updated", {"inv_no": inv_no, "by": user["username"]},
+                   permission="invoice:read")
     return _load(inv_no)
 
 
@@ -279,8 +386,10 @@ def cancel_invoice(inv_no: str, payload: dict,
                        "Reverse the payment before cancelling.")
 
         stamp = db.now()
+        touched: list[str] = []
         for line in conn.execute(
                 "SELECT * FROM invoice_lines WHERE inv_no = ?", (inv_no,)).fetchall():
+            touched.append(line["stock_code"])
             conn.execute(
                 "UPDATE stock SET qty_on_hand = qty_on_hand + ?, version = version + 1 "
                 "WHERE code = ?", (line["qty"], line["stock_code"]))
@@ -299,10 +408,27 @@ def cancel_invoice(inv_no: str, payload: dict,
             "purchases = ROUND(purchases - ?, 2), version = version + 1 WHERE code = ?",
             (row["balance"], row["net_amount"], row["customer_code"]))
         conn.execute(
-            "UPDATE invoices SET status = 'CANCELLED', balance = 0, "
+            "UPDATE invoices SET status = 'CANCELLED', balance = 0, short_lines = 0, "
             "remarks = TRIM(remarks || ' [cancelled: ' || ? || ']'), "
             "version = version + 1 WHERE inv_no = ?", (reason, inv_no))
+
+        # The stock is back on the shelf, so whatever this document was short of
+        # is no longer owed to anybody. Without this the refill note raised by
+        # the very invoice being cancelled would stand until somebody bought
+        # stock nobody needs.
+        replenishment.resolve_document(conn, inv_no, user["username"])
+        replenishment.resolve_settled(conn, touched, username=user["username"])
+
         db.audit(conn, user["username"], "cancel", "invoice", inv_no, reason)
+
+    alerts.sweep_kind("stock.refill")
+    batch = events.batch()
+    batch.add("invoice:cancelled",
+              {"inv_no": inv_no, "customer_code": row["customer_code"],
+               "reason": reason, "by": user["username"]},
+              permission="invoice:read")
+    batch.stock_changed(*touched)
+    batch.flush()
     return _load(inv_no)
 
 

@@ -24,6 +24,13 @@ Data       Migrated from 67 legacy .DBF tables: 1,735 customers, 2,137 stock ite
 - **No installation on the workstations.** Any modern browser, including phones and tablets.
 - **Real multi-user safety.** Every save is one database transaction, and edits use optimistic
   locking so two clerks can never silently overwrite each other.
+- **Screens that keep themselves current.** Raise an invoice at one counter and the stock figures,
+  the invoice list and the bell move on every other machine, with no refresh — including the
+  quantities under the cursor of somebody mid-way through writing an invoice. One held-open
+  connection per browser, no polling: ten workstations cost 0.000 s of server CPU over 40 s.
+- **An oversold item is a note to the buyer, not a lost sale.** If two clerks sell the same stock at
+  once the second invoice still goes through; the difference is recorded, the clerk is told, and it
+  appears on **Needs Refilling** until a delivery covers it. Switchable off per item.
 - **Proper accounts.** Salted PBKDF2 password hashes and a role/permission matrix replace the legacy
   plaintext passwords and single "which menu can you open" field.
 - **A full audit trail.** Who changed what, when, and from where.
@@ -537,6 +544,13 @@ The DOS Reports column, item for item, keeping its letters:
 Plus fast and slow movers, and the two stock alerts that sat under Maintenance in the original
 (Expiration Inquiry and Depleted Stocks).
 
+**Needs Refilling** is new, and it is worth telling apart from Depleted Stocks, which it sits beside.
+Depleted answers *what has run low*. Needs Refilling answers *what has already been promised to a
+customer and is not on the shelf* — see [Selling below zero](#selling-below-zero). It lists the
+buying side (one row per item, because a purchase order is raised per item) and the sales side (which
+customers are waiting, on which invoice, since when). Rows clear themselves when stock comes back;
+there is nothing to tick off.
+
 Every report prints from the browser with a dedicated print stylesheet.
 
 ### Maintenance
@@ -679,6 +693,59 @@ edition solves the same problem in two layers:
 Document numbers are allocated from a `sequences` table inside the same transaction as the insert, so
 two people creating invoices simultaneously can never be handed the same number.
 
+### Selling below zero
+
+Two clerks, one shelf. An item shows 100. One invoices 80 and saves; the second, whose screen was
+fetched before that save, invoices 50.
+
+**The second invoice goes through.** For anything the office can reorder, a sale is worth more than a
+tidy stock figure, and the clerk was reading a number that was correct when it was drawn. Refusing it
+would turn a delivery delay into a lost customer.
+
+What it does *not* do is go through silently:
+
+- the 30 that were promised and are not there become a row in `stock_shortfalls`, and the invoice
+  line is marked short;
+- the clerk gets a warning naming what was on hand and what was taken, and the invoice carries a
+  banner from then on;
+- whoever buys gets a **Needs Refilling** alert on the bell, and the item appears on that report;
+- the shortfall closes **by itself** when stock comes back to zero or above — through a purchase, a
+  sales return, or an inventory adjustment. There is no "mark as handled" button, deliberately: the
+  obligation is discharged by the delivery, not by somebody saying it was.
+
+Cancelling the invoice withdraws the obligation, because the goods go back on the shelf. A purge
+never removes an invoice that still owes stock — that is unfinished business exactly as an unpaid one
+is, even when it has been paid for.
+
+**Turning it off per item.** Stock items have a *Selling below zero* switch, on the edit form.
+It is **on for every item**, which is what the system always did — nothing ever checked stock before
+writing an invoice. Switch it off for the few things that genuinely cannot be promised (a controlled
+drug, a single-source import) and an invoice line that would go below zero is refused instead, naming
+the quantity actually available.
+
+While an invoice is being written, the line editor shows what is on hand under each quantity and
+**updates it live as other people sell**, so the warning arrives while there is still time to do
+something about it. It is advisory: the server decides, against the quantities as they are at the
+moment of the save.
+
+### Live updates
+
+Screens update themselves. Raise an invoice at one counter and the invoice list, the stock figures,
+the home screen and the bell move on every other machine, with no refresh.
+
+It is one long-lived HTTP connection per signed-in browser (`GET /api/events`, Server-Sent Events) —
+no polling, no new dependency on either side. **Idle cost measured on this hardware: ten connected
+workstations, 0.000 seconds of server CPU over 40 seconds.** It replaces a 60-second poll that made
+about 14,400 requests a day across ten machines to be told nothing had changed, so it is a reduction
+in load rather than an addition.
+
+A small dot beside the bell shows the state. It is green and silent while connected, and turns amber
+and pulses if the connection drops — which is the moment worth knowing about, because the screen has
+stopped updating itself. Reconnection is automatic and replays what was missed.
+
+What each account is told is filtered by **permission**, per event: a sales clerk sees the invoice and
+the stock movement, and is never told to go buying.
+
 ### Data integrity
 
 - Creating an invoice writes the header, the lines, one stock movement per line, decrements stock on
@@ -702,6 +769,8 @@ two people creating invoices simultaneously can never be handed the same number.
 | `sales_returns`, `sales_return_lines` | Returns |
 | `collections`, `collection_applications` | Payments and what they settled |
 | `stock_moves` | The movement ledger — successor to the 658 MB `STKREC.DBF` |
+| `notifications`, `notification_reads` | Alerts the server raises, and who has read them |
+| `stock_shortfalls` | Stock sold that was not on the shelf, until a delivery covers it |
 | `sequences`, `settings` | Document numbering and configuration |
 
 Full definitions with indexes are in [backend/app/schema/](backend/app/schema), split
@@ -711,7 +780,9 @@ into numbered parts that the server runs in filename order on startup:
 [sales](backend/app/schema/030_sales.sql),
 [purchasing](backend/app/schema/040_purchasing.sql),
 [ledger](backend/app/schema/050_stock_ledger.sql),
-[archive](backend/app/schema/060_archive.sql).
+[archive](backend/app/schema/060_archive.sql),
+[notifications](backend/app/schema/070_notifications.sql),
+[replenishment](backend/app/schema/080_replenishment.sql).
 
 Adding a column to one of those parts is enough: on the next start `init_db()`
 compares the parts against the live database and applies the missing columns
@@ -820,7 +891,9 @@ The API is self-documenting: with the server running, open **`/api/docs`**.
 | Purchases | `GET /api/purchases`, `/{id}`, `POST`, `POST /{id}/pay` |
 | Returns | `GET /api/returns`, `/{id}`, `POST`, `PUT /{id}` |
 | Collections | `GET /api/collections`, `/{id}`, `/open-invoices/{customer}`, `POST`, `POST /{id}/reverse` |
-| Reports | `/api/reports/dashboard`, `aging`, `sales`, `purchases`, `inventory`, `expiring`, `depleted`, `movers`, `collections`, `inactive-customers` |
+| Reports | `/api/reports/dashboard`, `aging`, `sales`, `purchases`, `inventory`, `expiring`, `depleted`, `refill`, `movers`, `collections`, `inactive-customers` |
+| Notifications | `GET /api/notifications`, `/unread-count`; `POST /api/notifications/read`, `read-all` |
+| Live | `GET /api/events` — one long-lived Server-Sent Events stream per signed-in browser |
 | Admin | `/api/admin/users`, `roles`, `sessions`, `audit`, `stats` |
 | Maintenance | `GET /api/maintenance/status`, `purge-preview`, `restore-preview`, `backups/{name}/download`; `POST /api/maintenance/backup`, `backups/import`, `restore`, `retention`, `check`, `compact`, `purge`; `DELETE /api/maintenance/backups/{name}` |
 | Archive | `GET /api/archive/summary`, `/api/archive/{kind}`, `/api/archive/{kind}/{number}`, `/api/archive/moves/by-item/{code}` |
@@ -853,17 +926,24 @@ backend/                Python API
     db.py               connections, WAL, transactions, sequences, audit
     security.py         password hashing, sessions, roles and permissions
     deps.py             auth dependencies, optimistic-locking helpers, paging
+    events.py           the live channel: in-process bus, fanned out over SSE
+    notifications.py    the alerts the server raises for itself, and the sweep
+    replenishment.py    stock sold that was not there: recording and closing it
     schema/             the relational schema, in numbered parts run in order
                         000 conventions, 010 security, 020 master files,
-                        030 sales, 040 purchasing, 050 ledger, 060 archive
-    routers/            auth, stock, customers, suppliers, invoices,
-                        purchases, returns, collections, reports, admin
+                        030 sales, 040 purchasing, 050 ledger, 060 archive,
+                        070 notifications, 080 replenishment
+    routers/            auth, stock, customers, suppliers, invoices, purchases,
+                        returns, collections, reports, admin, notifications,
+                        events
 
 frontend/               browser application, no build step
   index.html            the shell
   css/app.css           the whole stylesheet, light and dark
   js/
     api.js              fetch wrapper, 401 and 409 handling
+    live.js             the one EventSource, and the subscriptions on it
+    notify.js           the bell: badge, panel, and the alerts feed
     ui.js               DOM helpers, tables, modals, toasts, type-ahead
     omni.js             the top-bar search across stock, customers and invoices
     router.js           hash router

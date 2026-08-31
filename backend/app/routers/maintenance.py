@@ -853,16 +853,26 @@ def check(user: dict = Depends(require("maintenance:run"))) -> dict:
 # Purging of Records - item 2 on the old Maintenance menu
 # --------------------------------------------------------------------------- #
 
+# An invoice still owing stock is unfinished business in exactly the way an
+# unpaid one is, so the purge leaves it alone. The alternative - deleting it and
+# keeping the shortfall - would leave the refill list naming a document nobody
+# can open, and the alternative to *that* would be dropping a live obligation
+# because the customer happened to pay before the goods arrived.
+_PURGEABLE = (
+    "inv_date < ? AND balance <= 0.005 AND status <> 'CANCELLED' "
+    "AND inv_no NOT IN (SELECT doc_no FROM stock_shortfalls "
+    "                   WHERE doc_type = 'INVOICE' AND resolved_at IS NULL)"
+)
+
+
 def _purge_scope(before: str) -> dict:
     """Documents old enough and settled enough to leave the working set."""
     return {
         "invoices": db.scalar(
-            "SELECT COUNT(*) FROM invoices WHERE inv_date < ? AND balance <= 0.005 "
-            "AND status <> 'CANCELLED'", (before,), 0),
+            f"SELECT COUNT(*) FROM invoices WHERE {_PURGEABLE}", (before,), 0),
         "invoice_lines": db.scalar(
-            "SELECT COUNT(*) FROM invoice_lines WHERE inv_no IN "
-            "(SELECT inv_no FROM invoices WHERE inv_date < ? AND balance <= 0.005 "
-            " AND status <> 'CANCELLED')", (before,), 0),
+            f"SELECT COUNT(*) FROM invoice_lines WHERE inv_no IN "
+            f"(SELECT inv_no FROM invoices WHERE {_PURGEABLE})", (before,), 0),
         "collections": db.scalar(
             "SELECT COUNT(*) FROM collections WHERE col_date < ? AND status = 'POSTED'",
             (before,), 0),
@@ -894,6 +904,15 @@ def purge_preview(before: str = "", _user: dict = Depends(require("maintenance:r
             "cancelled_invoices": db.scalar(
                 "SELECT COUNT(*) FROM invoices WHERE inv_date < ? AND status = 'CANCELLED'",
                 (before,), 0),
+            # Paid for and not yet delivered. Named separately from the unpaid
+            # ones because it is a different reason to keep a document, and a
+            # figure the screen can explain rather than an unexplained shortfall
+            # in the count.
+            "invoices_owing_stock": db.scalar(
+                "SELECT COUNT(DISTINCT inv_no) FROM invoices WHERE inv_date < ? "
+                "AND balance <= 0.005 AND status <> 'CANCELLED' AND inv_no IN "
+                "(SELECT doc_no FROM stock_shortfalls WHERE doc_type = 'INVOICE' "
+                " AND resolved_at IS NULL)", (before,), 0),
         },
         "oldest_invoice": db.scalar("SELECT MIN(inv_date) FROM invoices", (), None),
         "database_mb": round(config.DB_PATH.stat().st_size / 1_048_576, 1),
@@ -920,13 +939,17 @@ def purge(payload: dict, user: dict = Depends(require("maintenance:run"))) -> di
 
     scope = _purge_scope(before)
     with db.transaction() as conn:
+        # Settled shortfall history first, while the invoices it names are still
+        # there to be matched. Only the closed ones: an open one keeps its
+        # invoice out of the purge entirely (see `_PURGEABLE`).
         conn.execute(
-            "DELETE FROM invoice_lines WHERE inv_no IN "
-            "(SELECT inv_no FROM invoices WHERE inv_date < ? AND balance <= 0.005 "
-            " AND status <> 'CANCELLED')", (before,))
+            f"DELETE FROM stock_shortfalls WHERE doc_type = 'INVOICE' "
+            f"AND resolved_at IS NOT NULL AND doc_no IN "
+            f"(SELECT inv_no FROM invoices WHERE {_PURGEABLE})", (before,))
         conn.execute(
-            "DELETE FROM invoices WHERE inv_date < ? AND balance <= 0.005 "
-            "AND status <> 'CANCELLED'", (before,))
+            f"DELETE FROM invoice_lines WHERE inv_no IN "
+            f"(SELECT inv_no FROM invoices WHERE {_PURGEABLE})", (before,))
+        conn.execute(f"DELETE FROM invoices WHERE {_PURGEABLE}", (before,))
         conn.execute(
             "DELETE FROM collection_applications WHERE col_no IN "
             "(SELECT col_no FROM collections WHERE col_date < ? AND status = 'POSTED')",

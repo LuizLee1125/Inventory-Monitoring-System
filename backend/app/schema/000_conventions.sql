@@ -14,6 +14,8 @@
 --   040  purchasing    purchases
 --   050  ledger        the stock movement ledger
 --   060  archive       the legacy O_* files, read-only
+--   070  notifications alerts the server raises for itself, and who has read them
+--   080  replenishment what was sold short and therefore has to be bought
 --
 -- Conventions:
 --   * every mutable business row carries `version` for optimistic locking

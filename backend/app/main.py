@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, config, db, security
+from . import __version__, config, db, events, security
 from . import notifications as alerts
 from .routers import (
     admin,
@@ -28,6 +28,11 @@ from .routers import (
     stock,
     suppliers,
 )
+
+# Aliased and on its own line because `app.events` — the bus — is already
+# imported above under its own name, and the router that exposes it cannot share
+# that name in this module.
+from .routers import events as events_router
 
 
 def lan_addresses() -> list[str]:
@@ -80,6 +85,12 @@ async def housekeeping() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Before anything can publish. Every router runs on FastAPI's threadpool, so
+    # the bus needs a handle on the loop to hand deliveries back to it; until
+    # this happens `events.publish()` is a no-op, which is what lets `migrate.py`
+    # and `dump_db.py` import the routers without a server.
+    events.hub.bind(asyncio.get_running_loop())
+
     added = db.init_db()
     removed = security.purge_expired_sessions()
     print(f"\n  {config.COMPANY_NAME} - {config.APP_NAME} {__version__}")
@@ -134,6 +145,9 @@ async def lifespan(app: FastAPI):
             schedule.cancel()
             with suppress(asyncio.CancelledError):
                 await schedule
+        # Wake every open stream so its generator can finish, rather than
+        # leaving uvicorn waiting on connections that are never told to stop.
+        events.hub.close()
 
 
 def create_app() -> FastAPI:
@@ -147,7 +161,7 @@ def create_app() -> FastAPI:
 
     for router in (auth, stock, customers, suppliers, invoices, purchases,
                    returns, collections, reports, admin, maintenance, archive,
-                   notifications, desktop):
+                   notifications, desktop, events_router):
         app.include_router(router.router, prefix="/api")
 
     @app.middleware("http")

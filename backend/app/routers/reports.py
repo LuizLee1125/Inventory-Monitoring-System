@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from .. import config, db
+from .. import config, db, replenishment
 from ..deps import require
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -253,6 +253,38 @@ def depleted(_user: dict = Depends(require("report:read"))) -> list[dict]:
         "supplier_code, cost FROM stock WHERE is_active = 1 "
         "AND (qty_on_hand <= 0 OR (reorder_point > 0 AND qty_on_hand <= reorder_point)) "
         "ORDER BY qty_on_hand, name LIMIT 1000")
+
+
+@router.get("/refill")
+def refill(_user: dict = Depends(require("report:read"))) -> dict:
+    """What has been sold and not delivered — the buying list.
+
+    Distinct from Depleted Stocks, which it sits next to and is easily confused
+    with. Depleted answers *what has run low*; this answers *what has already
+    been promised to a customer and is not on the shelf*, which is a stronger
+    claim and a shorter list. An item can be on one and not the other: something
+    at zero that nobody has asked for is depleted and owes nothing, and
+    something well above its reorder point can still owe thirty boxes if a large
+    order went through this morning.
+
+    `items` is the buying list, one row per code because a purchase order is
+    raised per item; `documents` is the same obligation seen from the sales
+    side, for answering "which customers are waiting".
+    """
+    items = replenishment.open_by_item()
+    documents = db.query(
+        "SELECT f.doc_no, f.doc_date, f.stock_code, f.description, f.unit, "
+        "       f.qty_requested, f.qty_available, f.qty_short, f.customer_code, "
+        "       c.name AS customer_name, f.created_at, f.created_by "
+        "FROM stock_shortfalls f "
+        "LEFT JOIN customers c ON c.code = f.customer_code "
+        "WHERE f.resolved_at IS NULL "
+        "ORDER BY f.created_at DESC LIMIT 1000")
+    return {
+        "items": items,
+        "documents": documents,
+        "total_short": round(sum(row["qty_short"] or 0 for row in items), 2),
+    }
 
 
 @router.get("/movers")

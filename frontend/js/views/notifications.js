@@ -12,10 +12,19 @@ import { api } from '../api.js';
 import { card, clear, el, reportError, toast, toolbar } from '../ui.js';
 import { describeError, notificationRow, setUnread } from '../notify.js';
 import { setTitle } from '../app.js';
+import { onChange } from '../live.js';
 
 export const skeleton = 'list';
 
 const PAGE_SIZE = 50;
+
+let watching = null;
+
+/** The router calls this when the screen is replaced. */
+export function leave() {
+  watching?.();
+  watching = null;
+}
 
 // Open / unread / everything. "Everything" includes conditions that have since
 // cleared, which is the only place they can be seen — the badge does not count
@@ -137,5 +146,13 @@ export async function render(container) {
     toolbar([tabs, el('span', { class: 'spacer' }), readAll]),
     card('', el('div', {}, [body, foot]), [], { flush: true }),
   );
+
+  // This is the screen somebody opens *because* they want to know what is
+  // happening, so it is the last place that should need a manual reload. It
+  // reloads in place — the filter and the paging offset are closed over, so
+  // somebody reading page three stays on page three.
+  watching?.();
+  watching = onChange(['notification:changed', 'notification:read'], load);
+
   await load();
 }

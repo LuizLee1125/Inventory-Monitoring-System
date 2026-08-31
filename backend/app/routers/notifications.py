@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from .. import notifications
+from .. import events, notifications
 from ..deps import current_user
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -46,13 +46,26 @@ def unread_count(user: dict = Depends(current_user)) -> dict:
     return {"unread": notifications.unread_count(user)}
 
 
+def _read_response(user: dict, marked: int) -> dict:
+    """Reply, and tell this person's *other* screens.
+
+    Read state is the one thing on the bell that belongs to a person rather than
+    to the business, so the event is addressed by `user_id` and carries no
+    permission — the counter PC and the office PC somebody is signed in on at
+    once should not disagree about their own badge. This is the equivalent of
+    the reference gateway's per-user rooms; here it is the exception, because
+    almost everything else that happens in an inventory system is everybody's.
+    """
+    unread = notifications.unread_count(user)
+    events.publish("notification:read", {"unread": unread}, user_id=user["id"])
+    return {"marked": marked, "unread": unread}
+
+
 @router.post("/read")
 def mark_read(payload: dict, user: dict = Depends(current_user)) -> dict:
-    marked = notifications.mark_read(user, payload.get("ids") or [])
-    return {"marked": marked, "unread": notifications.unread_count(user)}
+    return _read_response(user, notifications.mark_read(user, payload.get("ids") or []))
 
 
 @router.post("/read-all")
 def mark_all_read(user: dict = Depends(current_user)) -> dict:
-    marked = notifications.mark_all_read(user)
-    return {"marked": marked, "unread": notifications.unread_count(user)}
+    return _read_response(user, notifications.mark_all_read(user))

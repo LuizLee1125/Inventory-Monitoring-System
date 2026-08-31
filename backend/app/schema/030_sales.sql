@@ -26,6 +26,13 @@ CREATE TABLE IF NOT EXISTS invoices (
     paid_amount   REAL    NOT NULL DEFAULT 0,
     balance       REAL    NOT NULL DEFAULT 0,
     status        TEXT    NOT NULL DEFAULT 'OPEN',   -- OPEN | PAID | CANCELLED
+
+    -- How many lines took more than was on the shelf. Zero for almost every
+    -- invoice; non-zero is the flag the detail screen reads to say "this
+    -- document is waiting on a delivery", without joining to stock_shortfalls
+    -- for every row of the invoice list.
+    short_lines   INTEGER NOT NULL DEFAULT 0,
+
     posted_at     TEXT,
     created_at    TEXT    NOT NULL,
     created_by    TEXT    NOT NULL DEFAULT '',
@@ -51,7 +58,14 @@ CREATE TABLE IF NOT EXISTS invoice_lines (
     disc3       REAL    NOT NULL DEFAULT 0,
     line_total  REAL    NOT NULL DEFAULT 0,
     lot_no      TEXT    NOT NULL DEFAULT '',
-    expiry_date TEXT
+    expiry_date TEXT,
+
+    -- How much of this line was sold from stock that was not there. The line is
+    -- still worth its full amount and the customer is still owed the full
+    -- quantity; this is the part of it that has to be delivered from the next
+    -- purchase. Kept on the line rather than only in stock_shortfalls so the
+    -- printed document and the detail screen can mark it without a join.
+    qty_short   REAL    NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ix_invline_inv   ON invoice_lines(inv_no);
 CREATE INDEX IF NOT EXISTS ix_invline_stock ON invoice_lines(stock_code);

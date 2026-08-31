@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from .. import db
+from .. import db, events, replenishment
+from .. import notifications as alerts
 from ..deps import check_version, clean, money, paged_response, paging, require, require_fields
 
 router = APIRouter(prefix="/stock", tags=["stock"])
@@ -83,8 +84,12 @@ def lookup(q: str = "", limit: int = 20,
     """Type-ahead used by the invoice and purchase line editors."""
     term = f"%{q.strip().upper()}%"
     return db.query(
+        # `allow_oversell` rides along so the line editor can warn before the
+        # save rather than after: an item that cannot be oversold is the one
+        # case where too large a quantity is refused, and finding that out at
+        # the moment of saving a finished invoice is the worst time to find out.
         "SELECT code, name, unit, qty_on_hand, cost, price_a, price_b, price_c, "
-        "price_d, price_e, lot_no, expiry_date FROM stock "
+        "price_d, price_e, lot_no, expiry_date, allow_oversell FROM stock "
         "WHERE is_active = 1 AND (code LIKE ? OR name LIKE ?) "
         "ORDER BY code LIMIT ?",
         (term, term, max(1, min(limit, 50))),
@@ -116,6 +121,11 @@ def get_stock(code: str, _user: dict = Depends(require("stock:read"))) -> dict:
         "SELECT ROUND(SUM(-qty), 2) FROM stock_moves WHERE stock_code = ? "
         "AND move_type = 'SALE' AND doc_date >= date('now', '-12 month')",
         (row["code"],), 0)
+    # How much of this item has been sold and not delivered. Nearly always zero,
+    # and the detail screen says nothing when it is.
+    row["qty_short"] = db.scalar(
+        "SELECT ROUND(SUM(qty_short), 2) FROM stock_shortfalls "
+        "WHERE stock_code = ? AND resolved_at IS NULL", (row["code"],), 0)
     return row
 
 
@@ -154,6 +164,10 @@ def _stock_values(payload: dict) -> dict:
         "price_d": money(payload.get("price_d")),
         "price_e": money(payload.get("price_e")),
         "remarks": clean(payload.get("remarks")),
+        # Defaults to allowed, matching the column's own default and the
+        # behaviour every item had before the column existed. A form that does
+        # not send the field must not silently turn selling off.
+        "allow_oversell": 1 if payload.get("allow_oversell", True) else 0,
         "is_active": 1 if payload.get("is_active", True) else 0,
     }
 
@@ -175,6 +189,7 @@ def create_stock(payload: dict, user: dict = Depends(require("stock:write"))) ->
              db.now(), user["username"]],
         )
         db.audit(conn, user["username"], "create", "stock", code)
+    events.publish("stock:changed", {"codes": [code]}, permission="stock:read")
     return get_stock(code, _user=user)
 
 
@@ -196,6 +211,7 @@ def update_stock(code: str, payload: dict,
             [*values.values(), db.now(), user["username"], code],
         )
         db.audit(conn, user["username"], "update", "stock", code)
+    events.publish("stock:changed", {"codes": [code]}, permission="stock:read")
     return get_stock(code, _user=user)
 
 
@@ -233,8 +249,16 @@ def adjust_stock(code: str, payload: dict,
             "UPDATE stock SET qty_on_hand = ?, version = version + 1, "
             "last_txn = ?, updated_at = ?, updated_by = ? WHERE code = ?",
             (new_qty, db.today(), db.now(), user["username"], code))
+        # An adjustment upward is the other way stock comes back, so it closes
+        # refill notes exactly as a receipt does.
+        refilled = replenishment.resolve_settled(conn, [code],
+                                                 username=user["username"])
         db.audit(conn, user["username"], "adjust", "stock", code,
                  f"{qty:+.2f} -> {new_qty:.2f}: {reason}")
+
+    if refilled:
+        alerts.sweep_kind("stock.refill")
+    events.publish("stock:changed", {"codes": [code]}, permission="stock:read")
     return {"code": code, "qty_on_hand": new_qty, "document": doc_no}
 
 
@@ -272,4 +296,10 @@ def bulk_price_change(payload: dict,
             changed += 1
         db.audit(conn, user["username"], "price-change", "stock", None,
                  f"{changed} items, {', '.join(tiers)} {percent:+.2f}%")
+    # One event carrying every code, not one per item: a price run across two
+    # thousand items must not become two thousand events and two thousand
+    # refetches on every open stock screen in the office.
+    if changed:
+        events.publish("stock:changed", {"codes": codes, "reason": "prices"},
+                       permission="stock:read")
     return {"changed": changed, "percent": percent, "tiers": tiers}
