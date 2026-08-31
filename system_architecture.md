@@ -272,6 +272,45 @@ account. That is a choice, not an oversight — it is a property of the screen
 someone is sitting at, and the same clerk on the warehouse terminal and the
 office PC will want different answers.
 
+## The sales chart (`views/dashboard.js`)
+
+Hand-drawn SVG, because the application ships **no JavaScript dependencies at
+all** and one bar chart is not the reason to start. It reads the same theme
+tokens as everything else, so it follows light and dark with no JS.
+
+**What is on hover is the point of the chart.** Bars alone answer only "was this
+month bigger than that one". The tooltip carries what a reader wants next and
+what the bars cannot show: the amount, the invoice count, the **average
+invoice** and the **change on the previous month** — derived figures, not a
+restatement of the bar's height. Printing all of that on the chart would be six
+numbers per bar and no chart.
+
+Four things that are easy to get wrong:
+
+- **The hit area is a transparent full-height column, not the bar.** A lean
+  month is six pixels tall, and hovering it should not mean hitting six pixels.
+- **The highlight is a band behind the column, not a lighter bar.** A short bar
+  has almost no area to light up; the band says which column is being read even
+  when its value is nearly zero.
+- **The tooltip anchors to the bar's top, not the column's**, or a month that
+  barely registers gets its tooltip parked at the top of the chart. When there
+  is no room above the bar it flips to just below that edge.
+- **`:has()`, not `~`.** The hit rect is the last child of the group, so a
+  sibling combinator can never reach the band drawn before it. And focus is a
+  `stroke`, not an `outline`: `outline` on an SVG shape is not dependable.
+
+The rise/fall marker is a **drawn arrow**, `--icon-arrow-up` masked by
+`.trend-arrow`, for the same reason the magnifier stopped being a `⌕`: `▲` and
+`▼` are solid triangles rather than arrows, and they render at a different
+weight and size in every font that might be installed. There is one icon — the
+fall is the same mark turned 180° by the row's class — so the two directions
+cannot drift apart, and `background: currentColor` means the arrow is green or
+red with the figure beside it without being told which.
+
+Every bar is `tabindex="0"` with an `aria-label` carrying the same figures, and
+the tooltip opens on focus as well as hover — so the chart is readable without a
+mouse, which the previous `<title>` tooltip never was.
+
 ## Loading placeholders
 
 Every screen fetches before it can draw. There are two moments to cover and they

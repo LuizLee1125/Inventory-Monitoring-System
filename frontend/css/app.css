@@ -105,6 +105,9 @@
   --icon-lock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='8.6' width='12' height='8.4' rx='2'/%3E%3Cpath d='M6.9 8.6V6.2a3.1 3.1 0 0 1 6.2 0v2.4'/%3E%3C/svg%3E");
   --icon-eye: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.8 10S4.7 4.6 10 4.6 18.2 10 18.2 10 15.3 15.4 10 15.4 1.8 10 1.8 10Z'/%3E%3Ccircle cx='10' cy='10' r='2.6'/%3E%3C/svg%3E");
   --icon-eye-off: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.3 5.1A7.9 7.9 0 0 1 10 4.6c5.3 0 8.2 5.4 8.2 5.4a15 15 0 0 1-2.6 3.3M4.4 6.7A15 15 0 0 0 1.8 10S4.7 15.4 10 15.4c1 0 1.9-.2 2.7-.5'/%3E%3Cpath d='M8.2 8.2a2.6 2.6 0 0 0 3.6 3.6'/%3E%3Cpath d='m2.7 2.7 14.6 14.6'/%3E%3C/svg%3E");
+  /* A shaft and a head — an arrow. One icon; the fall is the same mark turned
+     180°, so the two directions can never drift apart. */
+  --icon-arrow-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 16.4V4.6'/%3E%3Cpath d='m5 9.6 5-5 5 5'/%3E%3C/svg%3E");
 
   --sidebar-w: 236px;
   --topbar-h: 60px;
@@ -2063,6 +2066,118 @@ input[type="date"] { min-height: 34px; }
   }
   .page:has(.print-doc) > :not(.print-doc) { display: none !important; }
   .print-doc.cancelled::after { color: rgb(220 38 38 / .22); }
+}
+
+/* --------------------------------------------------------------- charts -- */
+
+.chart { position: relative; }
+.chart-svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+.chart-grid { stroke: var(--border); stroke-width: 1; }
+.chart-axis {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  fill: var(--text-faint);
+}
+
+.chart-value {
+  fill: var(--primary);
+  opacity: .78;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+/* The band behind the hovered column, rather than a highlight on the bar
+   itself: a short bar has almost no area to light up, and the band tells you
+   which column you are reading even when its value is nearly zero. */
+.chart-band {
+  fill: var(--text);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.chart-hit { cursor: pointer; outline: none; }
+
+/* `:has()`, not `~`: the hit area is the *last* child of the group, so a
+   sibling combinator would never reach the band drawn before it. */
+.chart-bar:hover .chart-band,
+.chart-bar:has(.chart-hit:focus-visible) .chart-band { opacity: .05; }
+.chart-bar:hover .chart-value,
+.chart-bar:has(.chart-hit:focus-visible) .chart-value { opacity: 1; }
+/* A stroke rather than an outline: outline on an SVG shape is not dependable,
+   and the hit rect is transparent so the stroke is all there is to see. */
+.chart-hit:focus-visible {
+  stroke: var(--primary);
+  stroke-width: 2;
+  rx: 6;
+}
+
+.chart-tip {
+  position: absolute;
+  z-index: 60;
+  min-width: 190px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+  animation: pop-in var(--dur-fast) var(--ease-out);
+}
+.chart-tip-head {
+  margin: 0 0 var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: -.01em;
+}
+.chart-tip-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+}
+.chart-tip-row .swatch {
+  width: 9px; height: 9px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+}
+.chart-tip-row .k { color: var(--text-dim); }
+.chart-tip-row .v {
+  margin-left: auto;
+  padding-left: var(--sp-3);
+  font-family: var(--mono);
+  font-weight: var(--fw-semi);
+  font-variant-numeric: tabular-nums;
+}
+.chart-tip-row.up .v { color: var(--ok); }
+.chart-tip-row.down .v { color: var(--danger); }
+
+/* Drawn, not typed: ▲ and ▼ are solid triangles, and they render at a
+   different weight and size in every font that might be installed. The mask
+   takes its colour from the row, so the arrow is green or red with the figure
+   beside it and never has to be told which. */
+.trend-arrow {
+  display: inline-block;
+  width: 11px; height: 11px;
+  margin-right: var(--sp-1);
+  vertical-align: -1px;
+  background: currentColor;
+  -webkit-mask: var(--icon-arrow-up) center / contain no-repeat;
+  mask: var(--icon-arrow-up) center / contain no-repeat;
+}
+.chart-tip-row.down .trend-arrow { transform: rotate(180deg); }
+.chart-tip-row.muted .v { font-family: var(--sans); color: var(--text-faint); }
+.chart-tip-note {
+  margin: var(--sp-2) 0 0;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--primary);
 }
 
 /* ------------------------------------------------------------ skeletons -- */

@@ -1,54 +1,174 @@
 // Landing screen: receivables, sales, stock health, recent activity.
 
 import { api } from '../api.js';
-import { card, count, date, dataTable, el, money, stat, statusTag } from '../ui.js';
+import {
+  card, clear, count, date, dataTable, el, money, stat, statusTag,
+} from '../ui.js';
 import { setTitle } from '../app.js';
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** `<rect>`, `<text>` and friends, with attributes. */
+function svgEl(tag, attrs = {}, text = null) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  if (text !== null) node.textContent = text;
+  return node;
+}
+
+/** Axis labels: 1.2M and 450k rather than 1,240,000.00. */
+function shortMoney(value) {
+  const n = Math.abs(value);
+  if (n >= 1_000_000) return `${(value / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${Math.round(value / 1_000)}k`;
+  return String(Math.round(value));
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+
+function monthName(period) {
+  const [year, month] = String(period).split('-');
+  return `${MONTHS[Number(month) - 1] ?? period} ${year}`;
+}
+
+/**
+ * Sales by month.
+ *
+ * The bars alone answer "was this month bigger than that one". Everything a
+ * reader then wants — what it was worth, how many invoices it took, what that
+ * averages, and whether it went up or down on the month before — is on hover,
+ * because putting it on the chart would be six numbers per bar and no chart.
+ */
 function trendChart(rows) {
   if (!rows.length) return el('div', { class: 'empty', text: 'No sales in the last year.' });
 
   const width = 760;
-  const height = 190;
-  const padding = { top: 14, right: 12, bottom: 26, left: 12 };
+  const height = 230;
+  const pad = { top: 16, right: 14, bottom: 30, left: 52 };
   const max = Math.max(...rows.map((r) => r.sales || 0), 1);
-  const innerW = width - padding.left - padding.right;
-  const innerH = height - padding.top - padding.bottom;
-  const barW = Math.max(6, innerW / rows.length - 8);
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const step = innerW / rows.length;
+  const barW = Math.max(6, Math.min(46, step - 12));
+  const best = rows.reduce((top, r) => ((r.sales || 0) > (top.sales || 0) ? r : top), rows[0]);
 
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  svg.setAttribute('width', '100%');
-  svg.setAttribute('style', 'display:block');
+  const svg = svgEl('svg', {
+    viewBox: `0 0 ${width} ${height}`,
+    class: 'chart-svg',
+    role: 'img',
+    'aria-label': `Sales by month, ${rows.length} months, highest ${money(best.sales)}`,
+  });
+
+  // Gridlines first, so the bars sit on top of them. Four is enough to read a
+  // height against; more turns the card into graph paper.
+  for (let i = 0; i <= 4; i += 1) {
+    const value = (max / 4) * i;
+    const y = pad.top + innerH - (innerH / 4) * i;
+    svg.append(svgEl('line', {
+      x1: pad.left, x2: width - pad.right, y1: y, y2: y, class: 'chart-grid',
+    }));
+    svg.append(svgEl('text', {
+      x: pad.left - 10, y: y + 3.5, 'text-anchor': 'end', class: 'chart-axis',
+    }, i === 0 ? '0' : shortMoney(value)));
+  }
+
+  const tip = el('div', { class: 'chart-tip', hidden: true });
+  const wrap = el('div', { class: 'chart' }, [svg, tip]);
+
+  const show = (row, index, hit, bar) => {
+    const previous = index > 0 ? rows[index - 1] : null;
+    const change = previous && previous.sales
+      ? ((row.sales - previous.sales) / previous.sales) * 100
+      : null;
+    const average = row.invoices ? row.sales / row.invoices : 0;
+
+    clear(tip);
+    tip.append(
+      el('p', { class: 'chart-tip-head', text: monthName(row.period) }),
+      tipRow('Sales', money(row.sales), 'dot'),
+      tipRow('Invoices', count(row.invoices)),
+      tipRow('Average invoice', money(average)),
+      change === null
+        ? tipRow('Change', 'first month shown', 'muted')
+        // The arrow is an element, not a character: the row's class turns it
+        // over for a fall, and it inherits the row's green or red.
+        : tipRow(`vs ${monthName(previous.period).split(' ')[0]}`, [
+          el('span', { class: 'trend-arrow', 'aria-hidden': 'true' }),
+          `${Math.abs(change).toFixed(1)}%`,
+        ], change >= 0 ? 'up' : 'down'),
+      row === best ? el('p', { class: 'chart-tip-note', text: 'Best month shown' }) : null,
+    );
+
+    // Placed from real positions on screen, so it stays correct however the SVG
+    // has been scaled to the card. Centred on the column, but sitting above the
+    // *bar* rather than above the plot — anchoring to the column would park the
+    // tooltip at the top of the chart even for a month that barely registers.
+    const column = hit.getBoundingClientRect();
+    const top = bar.getBoundingClientRect();
+    const host = wrap.getBoundingClientRect();
+    tip.hidden = false;
+
+    const left = column.left - host.left + column.width / 2 - tip.offsetWidth / 2;
+    tip.style.left = `${Math.max(4, Math.min(left, host.width - tip.offsetWidth - 4))}px`;
+
+    // Above the bar, or just below its top edge when there is no room above.
+    const above = top.top - host.top - tip.offsetHeight - 10;
+    tip.style.top = `${above >= 4 ? above : top.top - host.top + 10}px`;
+  };
+
+  const hide = () => { tip.hidden = true; };
 
   rows.forEach((row, i) => {
     const barH = Math.max(2, ((row.sales || 0) / max) * innerH);
-    const x = padding.left + (innerW / rows.length) * i + 4;
-    const y = padding.top + innerH - barH;
+    const x = pad.left + step * i + (step - barW) / 2;
+    const group = svgEl('g', { class: 'chart-bar' });
 
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', x);
-    rect.setAttribute('y', y);
-    rect.setAttribute('width', barW);
-    rect.setAttribute('height', barH);
-    rect.setAttribute('rx', '3');
-    rect.setAttribute('fill', 'var(--primary)');
-    rect.setAttribute('opacity', i === rows.length - 1 ? '1' : '0.72');
-    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-    title.textContent = `${row.period}: ${money(row.sales)} (${row.invoices} invoices)`;
-    rect.append(title);
-    svg.append(rect);
+    // The band, then the bar, then a transparent column that catches the
+    // pointer: a lean month is six pixels tall, and hovering it should not
+    // require hitting six pixels.
+    const value = svgEl('rect', {
+      x, y: pad.top + innerH - barH, width: barW, height: barH,
+      rx: 4, class: 'chart-value',
+    });
+    group.append(
+      svgEl('rect', {
+        x: pad.left + step * i + 2, y: pad.top,
+        width: step - 4, height: innerH, rx: 6, class: 'chart-band',
+      }),
+      value,
+    );
 
-    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    label.setAttribute('x', x + barW / 2);
-    label.setAttribute('y', height - 8);
-    label.setAttribute('text-anchor', 'middle');
-    label.setAttribute('font-size', '10');
-    label.setAttribute('fill', 'var(--text-faint)');
-    label.textContent = row.period.slice(2).replace('-', '/');
-    svg.append(label);
+    const hit = svgEl('rect', {
+      x: pad.left + step * i, y: pad.top, width: step, height: innerH,
+      fill: 'transparent', class: 'chart-hit', tabindex: '0', role: 'button',
+      'aria-label': `${monthName(row.period)}: ${money(row.sales)} from `
+        + `${row.invoices} invoices`,
+    });
+    hit.addEventListener('mouseenter', () => show(row, i, hit, value));
+    hit.addEventListener('focus', () => show(row, i, hit, value));
+    hit.addEventListener('mouseleave', hide);
+    hit.addEventListener('blur', hide);
+    group.append(hit);
+    svg.append(group);
+
+    svg.append(svgEl('text', {
+      x: pad.left + step * i + step / 2, y: height - 10,
+      'text-anchor': 'middle', class: 'chart-axis',
+    }, row.period.slice(2).replace('-', '/')));
   });
 
-  return svg;
+  svg.addEventListener('mouseleave', hide);
+  return wrap;
+}
+
+/** `value` is a string, or a list of nodes when the figure carries an icon. */
+function tipRow(label, value, tone = '') {
+  return el('div', { class: `chart-tip-row ${tone}`.trim() }, [
+    tone === 'dot' ? el('span', { class: 'swatch' }) : null,
+    el('span', { class: 'k', text: label }),
+    el('span', { class: 'v' }, [].concat(value)),
+  ]);
 }
 
 export const skeleton = 'stats';
