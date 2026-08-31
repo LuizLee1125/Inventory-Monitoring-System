@@ -73,6 +73,21 @@ package-lock.json
 npm-debug.log*
 .eslintcache
 
+# --- desktop edition (Tauri) -------------------------------------------------
+# The Rust build directory reaches several gigabytes, and the icons and the
+# mobile scaffolding are generated from desktop/app-icon.svg by `npm run icon`.
+# The source that produces them is committed; the output is not.
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/src-tauri/icons/
+# Cargo.lock is deliberately NOT ignored: this is an application, and the
+# office's installer should build from the same dependency versions twice.
+
+# The published installer, which the settings screen hands out. Built output,
+# and tens of megabytes of it - the same reasons the backups folder is ignored.
+releases/*
+!releases/.gitkeep
+
 # --- editors and OS --------------------------------------------------------
 .vscode/
 .idea/

@@ -6,11 +6,11 @@
 //
 // Two columns of grouped rows: the group's name sits outside its card, so the
 // card holds nothing but controls. Left is the account and its password, right
-// is appearance and what this installation is.
+// is appearance, the desktop app, and what this installation is.
 
 import { api } from '../api.js';
 import { dateTime, el, field, input, reportError, toast } from '../ui.js';
-import { page, session, setTitle } from '../app.js';
+import { inDesktopApp, page, session, setTitle } from '../app.js';
 import { THEMES, currentTheme, effectiveTheme, setTheme } from '../theme.js';
 
 /* --------------------------------------------------------------- pieces -- */
@@ -192,6 +192,109 @@ function appearanceGroup() {
   ]);
 }
 
+/* --------------------------------------------------------- desktop app -- */
+
+/* The desktop edition is one more way into this same system, so this is where
+   it is handed out: the person who wants an icon on their desktop is already
+   signed in, at a counter PC, talking to the server that has the installer on
+   it. A release channel that needed the internet would be one that stops
+   working on the days the office line is down. */
+
+const megabytes = (bytes) => `${(bytes / 1_048_576).toFixed(1)} MB`;
+
+/**
+ * Fetch the installer to this PC.
+ *
+ * The browser does the transfer - a 100 MB file has no business being pulled
+ * through memory first - but the URL is checked before the link is clicked. A
+ * plain `<a download>` pointed at a 404 fails as "Failed - No file" in the
+ * downloads tray and says nothing at all inside the application, which is how a
+ * server running older code than this page looks from the user's chair. Same
+ * reasoning, same shape, as the backup download on the maintenance screen.
+ */
+async function downloadInstaller(filename, button) {
+  const url = '/api/desktop/download';
+  button.disabled = true;
+  try {
+    const probe = await fetch(url, { method: 'HEAD' });
+    if (!probe.ok) {
+      toast(probe.status === 404
+        ? 'The installer is no longer on the server. Ask an administrator to '
+          + 'publish one, or reload this page.'
+        : `The server refused the download (${probe.status}).`,
+      'error', 'Could not download');
+      return;
+    }
+    const link = el('a', { href: url, download: filename });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    toast('Downloading. Run the file when it finishes.', 'success');
+  } catch (error) {
+    reportError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function desktopGroup(release) {
+  const here = inDesktopApp();
+
+  // Inside the app already: saying "Download the desktop app" to somebody
+  // looking at the desktop app is the kind of detail that makes a system feel
+  // like it is not paying attention.
+  if (here) {
+    return group('Desktop app', [
+      row('This window', 'You are using the installed application rather than a browser.',
+        el('span', { class: 'tag ok', text: 'Installed' })),
+      release?.version
+        ? row('Installer on the server', 'What a new PC would get.',
+          value(`v${release.version}`, 'mono dim'))
+        : null,
+      row('Everyone else', 'The system stays open to any browser on the network.',
+        value('Unaffected', 'dim')),
+    ]);
+  }
+
+  if (!release?.available) {
+    return group('Desktop app', [
+      row('Not published yet',
+        'An installed application with an icon and no console window. It shows '
+        + 'this same system - nothing moves off this server.',
+        value('None on this server', 'dim')),
+    ], el('p', { class: 'hint', style: 'margin:0' }, [
+      'An administrator builds one with ',
+      el('code', { text: 'npm run build' }),
+      ' in the desktop folder, and it appears here.',
+    ]));
+  }
+
+  const button = el('button', {
+    class: 'btn primary',
+    type: 'button',
+    text: 'Download',
+    onClick: () => downloadInstaller(release.filename, button),
+  });
+
+  return group('Desktop app', [
+    // Stacked deliberately. The sentence under the label is long enough that a
+    // side-by-side row wraps anyway at this column width; saying so here means
+    // the layout is chosen rather than arrived at, and the button keeps its
+    // left edge lined up with the text above it.
+    row('Install on this PC',
+      'An icon on the desktop and no console window. It opens this same '
+      + 'system, so nothing you do moves anywhere else.',
+      button, { stacked: true }),
+    row('Version', release.built ? `Built ${dateTime(release.built)}.` : '',
+      value(release.version ? `v${release.version}` : release.kind.toUpperCase(),
+        'mono dim')),
+    row('Download size', '', value(megabytes(release.size), 'dim')),
+  ], el('p', { class: 'hint', style: 'margin:0' }, [
+    'Optional. The browser you are reading this in keeps working exactly as it '
+    + 'does now, and so does everyone else’s.',
+  ]));
+}
+
 /* -------------------------------------------------------------- system -- */
 
 function systemGroup() {
@@ -217,13 +320,20 @@ export async function render(container) {
   const me = await api.get('/me');
   session.user = { ...session.user, ...me };
 
+  // Optional, and deliberately not allowed to break the screen: a server too
+  // old to know about the desktop edition answers 404 here, and Settings is
+  // still the place people change their password.
+  const release = await api.get('/desktop').catch(() => null);
+
   // No standing header: the top bar already says Settings, and the group
   // labels say what each card is. A sentence above them restated both.
   container.classList.add('settings-page');
   container.append(
     el('div', { class: 'settings-grid' }, [
       el('div', { class: 'set-col' }, [accountGroup(me), passwordGroup()]),
-      el('div', { class: 'set-col' }, [appearanceGroup(), systemGroup()]),
+      el('div', { class: 'set-col' }, [
+        appearanceGroup(), desktopGroup(release), systemGroup(),
+      ]),
     ]),
   );
 }

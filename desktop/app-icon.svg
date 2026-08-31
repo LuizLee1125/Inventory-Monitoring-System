@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- The mark the web edition uses as its favicon and as the sidebar badge,
+       at the size `tauri icon` wants as a source. -->
+  <rect width="1024" height="1024" rx="224" fill="#1f4e79"/>
+  <text x="512" y="700" text-anchor="middle" fill="#ffffff"
+        font-family="Manrope, Inter, Segoe UI, Helvetica, Arial, sans-serif"
+        font-size="620" font-weight="800">M</text>
+</svg>

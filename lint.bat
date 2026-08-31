@@ -15,10 +15,10 @@ set "FIXMODE="
 if /i "%~1"=="--fix" set "FIXMODE=1"
 
 set "RUFF_ARGS=check backend"
-set "ESLINT_ARGS=frontend/**/*.js"
+set "ESLINT_ARGS=frontend/**/*.js desktop/ui/**/*.js"
 if defined FIXMODE (
   set "RUFF_ARGS=check backend --fix"
-  set "ESLINT_ARGS=frontend/**/*.js --fix"
+  set "ESLINT_ARGS=frontend/**/*.js desktop/ui/**/*.js --fix"
 )
 
 set "FAILED="

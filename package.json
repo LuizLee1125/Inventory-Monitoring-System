@@ -5,8 +5,8 @@
   "description": "Development-only tooling for the IMS browser application. The application itself has no runtime dependencies and no build step - nothing here is served to a workstation.",
   "type": "module",
   "scripts": {
-    "lint": "eslint \"frontend/**/*.js\"",
-    "lint:fix": "eslint \"frontend/**/*.js\" --fix"
+    "lint": "eslint \"frontend/**/*.js\" \"desktop/ui/**/*.js\"",
+    "lint:fix": "eslint \"frontend/**/*.js\" \"desktop/ui/**/*.js\" --fix"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

@@ -10,13 +10,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, config, db, notifications as alerts, security
+from . import __version__, config, db, security
+from . import notifications as alerts
 from .routers import (
     admin,
     archive,
     auth,
     collections,
     customers,
+    desktop,
     invoices,
     maintenance,
     notifications,
@@ -145,7 +147,7 @@ def create_app() -> FastAPI:
 
     for router in (auth, stock, customers, suppliers, invoices, purchases,
                    returns, collections, reports, admin, maintenance, archive,
-                   notifications):
+                   notifications, desktop):
         app.include_router(router.router, prefix="/api")
 
     @app.middleware("http")

@@ -75,6 +75,20 @@ BACKUP_KEEP_MIN = int(os.getenv("IMS_BACKUP_KEEP_MIN", "3"))
 # backups in it are the ones somebody remembered to take.
 BACKUP_EVERY_HOURS = int(os.getenv("IMS_BACKUP_HOURS", "24"))
 
+# Where the desktop edition's installer is published for the office to fetch.
+# The same reasoning as the backups folder: the person who wants the app is at a
+# counter PC, not at the server, so the file has to come to them down the wire.
+DESKTOP_DIR = Path(os.getenv("IMS_DESKTOP_DIR", REPO_DIR / "releases")).resolve()
+
+# ...and, failing that, wherever `npm run build` just wrote one. A build that
+# has to be copied somewhere before it can be handed out is a build somebody
+# forgets to copy; looking here means the installer is downloadable the moment
+# it exists. Tried in order, first match wins.
+DESKTOP_BUILD_DIRS = (
+    REPO_DIR / "desktop" / "src-tauri" / "target" / "release" / "bundle" / "nsis",
+    REPO_DIR / "desktop" / "src-tauri" / "target" / "release" / "bundle" / "msi",
+)
+
 COMPANY_NAME = os.getenv("IMS_COMPANY", "Marina Trading")
 APP_NAME = "Inventory Monitoring System"
 

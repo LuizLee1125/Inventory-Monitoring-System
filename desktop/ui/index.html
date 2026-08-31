@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inventory Monitoring System</title>
+<!-- No web fonts. This machine is often on a LAN with no route out, and a
+     launcher that waits on fonts.googleapis.com before painting is a launcher
+     that looks broken exactly when somebody is already worried. -->
+<link rel="stylesheet" href="setup.css">
+</head>
+<body>
+
+<main class="card" id="card">
+
+  <header class="head">
+    <span class="mark">M</span>
+    <div class="head-text">
+      <strong>Marina Trading</strong>
+      <span>Inventory Monitoring System</span>
+    </div>
+  </header>
+
+  <!-- ------------------------------------------------------- working state -->
+  <section class="state" id="state-working" hidden>
+    <div class="spinner" aria-hidden="true"></div>
+    <p class="state-line" id="working-line">Starting the server…</p>
+    <p class="state-note" id="working-note">
+      The first start of the day also takes a backup. That can take a few
+      seconds on a large database.
+    </p>
+    <button class="btn ghost" id="btn-cancel" type="button">Set it up by hand</button>
+  </section>
+
+  <!-- ---------------------------------------------------------------- form -->
+  <section class="state" id="state-form" hidden>
+
+    <!-- Only in chooser mode: the app is already connected and showing the
+         login screen behind this, so the question is "carry on, or move". -->
+    <p class="connected" id="connected" hidden></p>
+
+    <p class="lede" id="lede">Where does this PC get the system from?</p>
+
+    <div class="modes" role="radiogroup" aria-label="Mode">
+      <button class="mode" id="mode-host" type="button" role="radio" aria-checked="true">
+        <span class="mode-title">This PC runs the server</span>
+        <span class="mode-note">
+          Starts it here and keeps it running. Everyone else on the network
+          still opens it in a browser.
+        </span>
+      </button>
+      <button class="mode" id="mode-client" type="button" role="radio" aria-checked="false">
+        <span class="mode-title">Connect to the office server</span>
+        <span class="mode-note">
+          Another PC is running it. This one just shows it.
+        </span>
+      </button>
+    </div>
+
+    <div class="field" id="field-address" hidden>
+      <label for="input-host">Server address</label>
+      <input id="input-host" type="text" spellcheck="false" autocapitalize="off"
+             autocomplete="off" placeholder="192.168.100.17">
+      <p class="hint">
+        The <strong>Network</strong> address printed by the server, without
+        <code>http://</code>.
+      </p>
+    </div>
+
+    <div class="field" id="field-folder">
+      <label for="input-folder">System folder</label>
+      <input id="input-folder" type="text" spellcheck="false" autocapitalize="off"
+             autocomplete="off" placeholder="C:\Projects\Inventory-Monitoring-System">
+      <p class="hint" id="folder-hint">The folder holding <code>start.bat</code>.</p>
+    </div>
+
+    <div class="field narrow">
+      <label for="input-port">Port</label>
+      <input id="input-port" type="number" min="1" max="65535" value="8080">
+      <p class="hint">8080 unless the office was told otherwise.</p>
+    </div>
+
+    <p class="alert" id="alert" role="alert" hidden></p>
+
+    <div class="actions">
+      <button class="btn ghost" id="btn-test" type="button">Test</button>
+      <button class="btn primary" id="btn-go" type="button">Open the system</button>
+    </div>
+
+    <div class="foot">
+      <button class="link" id="btn-browser" type="button">Open in a browser instead</button>
+    </div>
+
+    <details class="log" id="log" hidden>
+      <summary>Server output</summary>
+      <pre id="log-body"></pre>
+    </details>
+
+    <!-- The bar across the bottom, in chooser mode only. Saved the moment it
+         is ticked rather than on the way out, because this window has a close
+         button as well as a Continue. -->
+    <label class="ask-bar" id="ask-bar" hidden>
+      <input type="checkbox" id="ask-again">
+      <span>
+        <strong>Ask every time the app opens</strong>
+        <span>Turn this off to go straight to the sign-in screen.</span>
+      </span>
+    </label>
+  </section>
+
+</main>
+
+<script src="setup.js"></script>
+</body>
+</html>

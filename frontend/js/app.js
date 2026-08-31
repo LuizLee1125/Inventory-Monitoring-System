@@ -33,6 +33,58 @@ export const session = { user: null, meta: null };
 
 export const can = (permission) => Boolean(session.user?.permissions?.includes(permission));
 
+/* --------------------------------------------------------- desktop app -- */
+
+/**
+ * Whether this page is being shown by the desktop shell rather than a browser.
+ *
+ * The shell opens its window on `/?desktop=1&boot=…`; a query string survives
+ * the hash routing that is all this application does, so the answer is the same
+ * on every screen. Nothing below this line runs in a browser.
+ */
+export const inDesktopApp = () =>
+  new URLSearchParams(window.location.search).has('desktop');
+
+const DESKTOP_BOOT_KEY = 'ims.desktop.boot';
+
+/**
+ * The desktop app starts signed out, every time.
+ *
+ * A browser tab is somebody's own; an installed application on a shared counter
+ * PC is not, and leaving the last person still signed in when the next one
+ * opens it is how the wrong name ends up on an invoice. So closing the app ends
+ * the session — implemented here, at the next open, because a process that is
+ * killed or loses power never gets to run a tidy-up.
+ *
+ * "Was the app just opened?" is answered by `boot`, which the shell regenerates
+ * once per launch, held against `sessionStorage`, which the webview drops when
+ * it closes. Either signal alone would do; together they still give the right
+ * answer if one of them behaves differently on some future WebView2. A reload
+ * inside a run matches on both and is left alone — nobody expects F5 to sign
+ * them out.
+ */
+async function endDesktopSession() {
+  if (!inDesktopApp()) return;
+
+  const boot = new URLSearchParams(window.location.search).get('boot') || '';
+  try {
+    if (sessionStorage.getItem(DESKTOP_BOOT_KEY) === boot) return;
+    sessionStorage.setItem(DESKTOP_BOOT_KEY, boot);
+  } catch {
+    // Storage unavailable: sign out rather than risk carrying a session over.
+  }
+
+  // Deliberately not api.post: a 401 here is the ordinary answer when nobody
+  // was signed in, and it must not reach the unauthorized listeners, whose job
+  // is to announce a session that ended in the middle of somebody's work.
+  try {
+    await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+  } catch {
+    // Offline, or the session was already gone. The sign-in screen is next
+    // either way.
+  }
+}
+
 /* ----------------------------------------------------------- navigation -- */
 
 // The sidebar keeps the DOS menu's three groupings, because that is the
@@ -618,6 +670,10 @@ async function boot() {
   initTheme();
   wireChrome();
   registerRoutes();
+  // Before the session is read, not after: in the desktop app a session left
+  // over from the last time it was open has to be ended, or the shell would
+  // hand the next person the previous one's account.
+  await endDesktopSession();
   // Routing only begins once the session is known, so a guarded screen is
   // never rendered before permissions have loaded.
   const signedIn = await loadSession();

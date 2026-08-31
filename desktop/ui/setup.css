@@ -1,0 +1,394 @@
+/* Launcher for the desktop edition.
+
+   The palette, radii, shadows and type scale are the ones in
+   frontend/css/app.css, which took them from NTC-TMS-Tauri. This window is the
+   first thing anybody sees, and it has to look like the application it is about
+   to open rather than like a dialog box that wandered in. */
+
+:root {
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --border: #e2e8f0;
+  --border-strong: #94a3b8;
+  --text: #0f172a;
+  --text-dim: #64748b;
+  --text-faint: #94a3b8;
+
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-soft: #dbeafe;
+  --on-primary-soft: #1e40af;
+
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+  --ok: #059669;
+  --ok-soft: #d1fae5;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+  --radius-field: 12px;
+  --shadow: 0 1px 2px 0 rgb(0 0 0 / .03), 0 0 0 1px rgb(0 0 0 / .04);
+  --shadow-lg: 0 4px 12px -2px rgb(0 0 0 / .08), 0 0 0 1px rgb(0 0 0 / .04);
+
+  --field-bg: #f8fafc;
+  --ring: 0 0 0 3px rgb(37 99 235 / .3);
+
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px;
+
+  --dur: 170ms;
+  --ease: cubic-bezier(.2, .7, .3, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111111;
+    --surface: #171717;
+    --surface-2: #232323;
+    --border: #2c2c2c;
+    --border-strong: #5a5a5a;
+    --text: #e5e5e5;
+    --text-dim: #a3a3a3;
+    --text-faint: #8c8c8c;
+
+    --primary: #60a5fa;
+    --primary-hover: #93c5fd;
+    --primary-soft: #1e2b45;
+    --on-primary-soft: #bfdbfe;
+
+    --danger: #ef4444;
+    --danger-soft: #731d20;
+    --ok: #0ea271;
+    --ok-soft: #0d2f24;
+
+    --shadow: 0 1px 2px 0 rgb(0 0 0 / .5), 0 0 0 1px rgb(255 255 255 / .05);
+    --shadow-lg: 0 4px 16px -2px rgb(0 0 0 / .6), 0 0 0 1px rgb(255 255 255 / .06);
+
+    --field-bg: #1e1e1e;
+    --ring: 0 0 0 3px rgb(96 165 250 / .35);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5);
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, -apple-system, "Segoe UI Variable Text", "Segoe UI",
+               Roboto, Helvetica, Arial, sans-serif;
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.card {
+  width: 100%;
+  max-width: 460px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--sp-6);
+}
+
+/* --------------------------------------------------------------------- head */
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-5);
+  margin-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.mark {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  background: #1f4e79;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-family: Manrope, Inter, "Segoe UI", sans-serif;
+  font-weight: 800;
+  font-size: 20px;
+}
+
+.head-text { display: flex; flex-direction: column; line-height: 1.25; }
+.head-text strong {
+  font-family: Manrope, Inter, "Segoe UI", sans-serif;
+  font-weight: 700;
+  font-size: var(--fs-lg);
+}
+.head-text span { color: var(--text-dim); font-size: var(--fs-xs); }
+
+/* ------------------------------------------------------------------- states */
+
+.state { display: block; }
+.state[hidden] { display: none; }
+
+.lede {
+  margin: 0 0 var(--sp-4);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
+/* Chooser mode: what the sign-in screen behind this window is already talking
+   to. Stated rather than implied — the whole point of asking again is that the
+   answer may have changed since yesterday. */
+.connected {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-radius: var(--radius);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.connected[hidden] { display: none; }
+.connected::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* --- working ---------------------------------------------------------- */
+
+#state-working { text-align: center; padding: var(--sp-5) 0 var(--sp-2); }
+
+.spinner {
+  width: 30px;
+  height: 30px;
+  margin: 0 auto var(--sp-4);
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  animation: spin 750ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.state-line { margin: 0 0 var(--sp-2); font-weight: 600; }
+.state-note {
+  margin: 0 0 var(--sp-5);
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+}
+
+/* --- mode picker ------------------------------------------------------ */
+
+.modes { display: grid; gap: var(--sp-2); margin-bottom: var(--sp-5); }
+
+.mode {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color var(--dur) var(--ease),
+              background var(--dur) var(--ease);
+}
+.mode:hover { border-color: var(--border-strong); }
+.mode[aria-checked="true"] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.mode[aria-checked="true"] .mode-title { color: var(--on-primary-soft); }
+.mode:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.mode-title { display: block; font-weight: 600; font-size: var(--fs-sm); }
+.mode-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+
+/* --- fields ----------------------------------------------------------- */
+
+.field { margin-bottom: var(--sp-4); }
+.field[hidden] { display: none; }
+.field.narrow input { max-width: 120px; }
+
+.field label {
+  display: block;
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.field input {
+  width: 100%;
+  padding: 9px var(--sp-3);
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-field);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  user-select: text;
+}
+.field input:focus { outline: none; border-color: var(--primary); box-shadow: var(--ring); }
+
+.hint {
+  margin: var(--sp-1) 0 0;
+  color: var(--text-faint);
+  font-size: var(--fs-2xs);
+}
+.hint code {
+  font-family: ui-monospace, Consolas, "Cascadia Mono", monospace;
+  font-size: inherit;
+}
+
+/* --- messages --------------------------------------------------------- */
+
+.alert {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  background: var(--danger-soft);
+  color: var(--danger);
+  user-select: text;
+}
+.alert.ok { background: var(--ok-soft); color: var(--ok); }
+.alert[hidden] { display: none; }
+
+/* --- actions ---------------------------------------------------------- */
+
+.actions { display: flex; gap: var(--sp-2); }
+
+.btn {
+  padding: 9px var(--sp-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.btn:focus-visible { outline: none; box-shadow: var(--ring); }
+.btn[disabled] { opacity: .55; cursor: default; }
+
+.btn.primary { flex: 1; background: var(--primary); color: #fff; }
+.btn.primary:hover:not([disabled]) { background: var(--primary-hover); }
+
+.btn.ghost {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+.btn.ghost:hover:not([disabled]) { border-color: var(--border-strong); }
+
+.foot { margin-top: var(--sp-4); text-align: center; }
+
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.link:hover { color: var(--primary); }
+
+/* --- the bar across the bottom ---------------------------------------- */
+
+/* Full-bleed to the card's edges: it is a bar, not another field, and putting
+   it back on the card's own background separates it from the form above
+   without needing a rule between them. */
+.ask-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  margin: var(--sp-5) calc(var(--sp-6) * -1) calc(var(--sp-6) * -1);
+  padding: var(--sp-4) var(--sp-6);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  cursor: pointer;
+}
+.ask-bar[hidden] { display: none; }
+
+.ask-bar input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.ask-bar input:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.ask-bar > span { display: flex; flex-direction: column; }
+.ask-bar strong { font-size: var(--fs-sm); font-weight: 600; }
+.ask-bar > span > span {
+  margin-top: 1px;
+  color: var(--text-dim);
+  font-size: var(--fs-2xs);
+  line-height: 1.4;
+}
+
+/* --- server output ---------------------------------------------------- */
+
+.log { margin-top: var(--sp-4); }
+.log[hidden] { display: none; }
+
+.log summary {
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.log pre {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-3);
+  max-height: 180px;
+  overflow: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, Consolas, "Cascadia Mono", monospace;
+  font-size: var(--fs-2xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}

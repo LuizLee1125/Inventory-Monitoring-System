@@ -9,7 +9,14 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["backend/**", "legacy/**", "database/**", "node_modules/**"],
+    ignores: [
+      "backend/**",
+      "legacy/**",
+      "database/**",
+      "node_modules/**",
+      "desktop/node_modules/**",
+      "desktop/src-tauri/**",
+    ],
   },
   js.configs.recommended,
   {
@@ -23,6 +30,28 @@ export default [
     },
     rules: {
       // A leading underscore marks a binding that is intentionally unused.
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      eqeqeq: ["error", "smart"],
+      "prefer-const": "error",
+      "no-var": "error",
+      "object-shorthand": "warn",
+      "no-implicit-coercion": "warn",
+      "no-console": ["warn", { allow: ["warn", "error"] }],
+    },
+  },
+  {
+    // The desktop launcher (desktop/ui/). Same rules, but a classic script
+    // rather than a module: it runs with `withGlobalTauri`, so the whole Tauri
+    // API arrives as a global and there is nothing to import.
+    files: ["desktop/ui/**/*.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "script",
+      globals: {
+        ...globals.browser,
+      },
+    },
+    rules: {
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       eqeqeq: ["error", "smart"],
       "prefer-const": "error",

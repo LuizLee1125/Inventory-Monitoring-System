@@ -936,3 +936,134 @@ account), follow the same shape rather than adding print rules per screen.
 
 Note that `GET /invoices/{no}/print` existed unused for a long time; check for
 an endpoint like it before adding one.
+
+## The desktop edition points at HTTP, it does not bundle the frontend (v0.4)
+
+`desktop/` is a Tauri v2 shell, in the same family as `NTC-TMS-Tauri`. The
+tempting shape — set `frontendDist` to `../frontend` and ship the browser
+application inside the installer — is the wrong one, and the reason is one line
+of `frontend/js/api.js`:
+
+```js
+const response = await fetch(`/api${path}${queryString(params)}`, {
+```
+
+Every call is a **relative** URL. Bundled into the webview those resolve against
+`tauri://localhost`, where there is no API and nothing to serve one. Making it
+work would mean introducing an API base URL, threading it through `api.js`,
+`omni.js` and anything else that builds a path, and then shipping a *copy* of
+the frontend inside the installer — a second `frontend/` that is byte-identical
+right up until somebody edits one of them, at which point the office has two
+versions of the same screen and no way to tell which one it is looking at.
+
+So the shell bundles only its own launcher (`desktop/ui/`) and opens the
+application window on `WebviewUrl::External(http://host:port)`. The page it
+shows is served by the same FastAPI process the browsers talk to, from the same
+`frontend/` folder, on the same session cookie. There is exactly one copy of
+every screen, `/api` stays relative, and `backend/` and `frontend/` needed **no
+changes at all** for the desktop edition to exist.
+
+Consequences worth knowing before changing this:
+
+- **The application window has no IPC.** `capabilities/default.json` scopes
+  every permission to `"windows": ["setup"]`. The remote page cannot reach a
+  Tauri command, which is the correct posture for a page loaded over plain HTTP
+  from a LAN address. Do not widen it to `["main"]` for convenience.
+- **Host mode is `start.bat` with the console hidden.** Same interpreter, same
+  `uvicorn app.main:app --host 0.0.0.0`, same port. `0.0.0.0` is not an
+  oversight: it is what keeps the browser route alive while the desktop app is
+  the thing running the server.
+- **A busy port means attach, not fail.** `start.bat` refuses to start a second
+  copy, because the second dies while the first carries on serving and a restart
+  appears to do nothing. The shell probes `/api/meta` first and, if this system
+  answers, uses it. Opening the app while `start.bat` is already running is
+  therefore normal rather than an error.
+- **The server is a `std::process::Child`, killed on `RunEvent::Exit`.** Not
+  `tauri-plugin-shell`: the one thing that must be unambiguous is that quitting
+  the app releases the port, since a port held by an invisible process is the
+  failure mode above with nothing on screen to explain it.
+- **The launcher has no build step**, matching the browser application:
+  `withGlobalTauri: true` and a plain `<script>`. It is linted by the same
+  `lint.bat` under a second block in `eslint.config.mjs` that sets
+  `sourceType: "script"`.
+
+### Handing the app out (`/api/desktop`)
+
+The installer comes off the server the user is already signed in to, from
+**Settings → Desktop app**. That is the whole distribution channel, and it is a
+smaller one than `NTC-TMS-Tauri`'s on purpose: that project fetches releases
+from Supabase storage because its users are spread across the country, and these
+are all on one network with the server in the corner of the room. A channel that
+needed the internet would fail on the days the office line is down.
+
+Three details that are decisions rather than defaults:
+
+- **`/api/desktop` answers rather than 404s when there is nothing to give.**
+  `{"available": false}` lets the screen say "nobody has built one for this
+  server yet"; a 404 would leave it unable to tell that apart from a server too
+  old to have the endpoint.
+- **Format beats date when choosing which file to offer.** A Tauri build writes
+  the NSIS `.exe` and the MSI within a second of each other, so "newest wins"
+  hands out whichever finished last — the MSI, which needs an administrator.
+  `INSTALLER_SUFFIXES` is a preference order; mtime only breaks ties inside one
+  format.
+- **`releases/` beats the build output even when the build is newer.**
+  Publishing should be a decision, not a side effect of compiling.
+
+The screen knows which of the two it is being viewed in from `?desktop=1`, which
+the shell appends when it opens the window (`open_main_window` in `lib.rs`). A
+query string survives hash routing, which is all the frontend does, and it beat
+the alternative of overriding the webview's user agent — that means hardcoding a
+browser version that goes stale. Offering somebody a download of the application
+they are currently looking at is the kind of detail that makes a system feel like
+it is not paying attention, so in the app the card reports the installed state
+instead.
+
+### Opening the desktop app: the chooser, and signing out (v0.4)
+
+Two behaviours the browser deliberately does not share.
+
+**The chooser rests on the sign-in screen, and it is the same window that was
+just showing the spinner.** The obvious build - render the prompt inside the
+login page - was rejected: the application window loads a remote page over plain
+HTTP, and `capabilities/default.json` scopes IPC to `"windows": ["setup"]` so
+that page cannot reach a Tauri command. Choosing a server is a shell operation;
+giving the remote page the IPC to do it would trade a real security boundary for
+a layout. So the launcher window connects first, the application window opens on
+the login screen behind it, and the launcher then re-centres always-on-top as
+the chooser (`present_chooser`). A *second* window was rejected too - a dialog
+should not put a second entry in the taskbar, and re-parenting after build is
+not something a window can do.
+
+Ordering follows from that: **connect, then ask**. Asking first would put a
+question in front of somebody who cannot yet see what it is about, and would
+delay the sign-in screen behind a prompt most people will dismiss unchanged.
+Pressing Continue without changing anything calls `close_launcher` and nothing
+else - no restart, no reconnect (`sameAsConnected` in `setup.js`).
+
+`ask_on_open` is saved **as the box is ticked**, not on the way out through
+Continue. The window has a close button of its own, and a preference that
+survives only one of two exits looks broken half the time. It is also seeded
+into the checkbox during `boot()` rather than left at the markup default,
+because `readForm()` carries the value: the failed-connection path reaches the
+form without going through the chooser, and an unchecked default would have
+turned the setting off on the retry.
+
+**Signing out on close is implemented at the next open**, in
+`end_desktop_session()` in `frontend/js/app.js`. A process that is killed, or
+loses power, never runs a tidy-up, so "log out when the app closes" cannot be a
+close handler. Two signals answer "was the app just opened?": `boot`, which the
+shell regenerates once per launch and puts on the window's URL, and
+`sessionStorage`, which the webview drops when it closes. Either alone would do;
+holding one against the other still gives the right answer if a future WebView2
+restores session storage. A reload inside a run matches on both and is left
+alone - nobody expects F5 to sign them out.
+
+`clear_all_browsing_data()` was the other candidate and is the wrong tool: it
+would also wipe `localStorage`, and with it `ims.theme`, so the app would forget
+light or dark every launch.
+
+The logout is a bare `fetch` rather than `api.post` on purpose - a 401 is the
+ordinary answer when nobody was signed in, and it must not reach the
+unauthorized listeners, whose job is to announce a session that ended in the
+middle of somebody's work.

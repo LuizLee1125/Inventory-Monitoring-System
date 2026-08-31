@@ -2144,6 +2144,10 @@ input[type="date"] { min-height: 34px; }
 }
 .tag.open { background: var(--warn-soft); color: var(--warn); }
 .tag.paid { background: var(--ok-soft); color: var(--ok); }
+/* The same colour without the document meaning, for a state that is simply
+   good — "Installed" on the settings screen. `paid` on a tag that is not about
+   money reads as a copy-paste. */
+.tag.ok { background: var(--ok-soft); color: var(--ok); }
 .tag.cancelled, .tag.reversed { background: var(--danger-soft); color: var(--danger); }
 .tag.neutral { background: var(--surface-2); color: var(--text-dim); }
 .tag.info { background: var(--primary-soft); color: var(--primary); }

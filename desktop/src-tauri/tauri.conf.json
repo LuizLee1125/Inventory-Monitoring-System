@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Marina IMS",
+  "version": "1.0.0",
+  "identifier": "com.marinatrading.ims",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi", "deb", "appimage", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "Marina Trading",
+    "copyright": "Marina Trading",
+    "category": "Business",
+    "shortDescription": "Inventory Monitoring System",
+    "longDescription": "Inventory, invoicing and receivables for Marina Trading. The desktop edition can host the server for the office or connect to a PC that already does; either way the same system stays open to any browser on the network."
+  }
+}

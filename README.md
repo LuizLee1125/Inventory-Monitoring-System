@@ -280,6 +280,110 @@ Notes on scope and safety:
 
 ---
 
+## Desktop edition
+
+Everything above still holds: the system is a server and a browser, and that is
+how most of the office will keep using it. The desktop edition adds an installed
+application — an icon on the desktop, an entry in the tray, no console window —
+for the people who want one. It is in `desktop/`, built with Tauri v2, the same
+toolkit as `NTC-TMS-Tauri`.
+
+**It is not a second copy of the application.** The window is pointed at the
+running server over HTTP, so what it shows is the same `frontend/` a browser
+gets, from the same process, on the same session cookie. Desktop and browser
+cannot show different versions of a screen, because there is only one of each
+screen. Nothing under `backend/` or `frontend/` changes for it to work.
+
+Two modes, chosen on the first run and remembered:
+
+| Mode | What it does | Where it belongs |
+| --- | --- | --- |
+| **This PC runs the server** | Starts the server itself and waits for it, then opens the window on it. Quitting the app stops the server. | The office PC — it replaces double-clicking `start.bat` |
+| **Connect to the office server** | Opens the window on an address somebody else is hosting. | Counter machines, replacing a browser bookmark |
+
+**The web edition is unaffected either way.** Host mode binds `0.0.0.0` exactly
+as `start.bat` does, so while the desktop app is running the server, every other
+PC, phone and tablet still opens `http://<server>:8080` and works normally. The
+desktop app is one more way in, not a replacement for the others — there is an
+*Open in a browser instead* on its first screen and in its tray menu saying so.
+
+If the port is already serving this system — `start.bat` is open, or the app was
+launched twice — it **attaches to what is already there** rather than starting a
+second copy. That is the failure the [Restarting](#restarting) section is about,
+answered rather than merely refused.
+
+### Every time it opens
+
+Two things happen in the desktop app that do not happen in a browser.
+
+**It asks where the system is.** The app connects with the setting it used last,
+so the sign-in screen comes up straight away, and then the chooser appears
+resting on top of it: *Running on this PC, port 8080* — carry on, or point this
+PC somewhere else. A machine that gets switched between hosting and connecting
+is worth asking, and asking it over the sign-in screen costs nobody a step: the
+answer is already on screen behind the question.
+
+For people who only ever answer the same way, a bar across the bottom of that
+window turns it off: **Ask every time the app opens**. Untick it and later opens
+go straight to sign-in. It is saved the moment it is ticked, so closing that
+window with its own close button keeps the choice. To get the chooser back
+afterwards, use **Change server…** in the tray menu.
+
+**It starts signed out.** Closing the app ends the session, so the next person
+to open it gets the sign-in screen rather than the last person's account. A
+browser tab belongs to somebody; an installed application on a shared counter PC
+does not, and that is how the wrong name ends up on an invoice. Reloading inside
+a run does *not* sign you out — only closing and reopening the app does.
+
+Neither applies to the browser. Open `http://<server>:8080` and it behaves
+exactly as it always has, session and all.
+
+### Getting it onto a PC
+
+**Settings → Desktop app → Download.** Every role reaches Settings, so anybody
+can install it on the machine they are sitting at; nothing about it is
+privileged, and installing the client grants nothing that signing in does not.
+
+The installer comes off this server rather than off the internet. `NTC-TMS-Tauri`
+fetches its releases from cloud storage because its users are spread across the
+country; these users are all on one network with the server in the corner of the
+room, and a release channel that needed the line to be up would be one that
+fails on exactly the days it is not.
+
+What Settings offers is the newest installer in `releases\`, and failing that
+whatever `npm run build` last wrote into `desktop\src-tauri\target\release\bundle`
+— so a fresh build is downloadable without anybody having to copy it anywhere.
+To publish one deliberately, put it in `releases\`; that folder wins over the
+build output even when the build is newer, because publishing should be a
+decision rather than a side effect of compiling.
+
+If Settings says *None on this server*, nobody has built one yet.
+
+### Running it
+
+```bash
+start-desktop.bat
+```
+
+First run installs the Tauri CLI and compiles the Rust shell, which takes
+several minutes; after that it starts in seconds. Needs
+[Node.js](https://nodejs.org) and the [Rust toolchain](https://rustup.rs) —
+neither is needed by the web edition, and neither is needed on the workstations.
+
+To produce an installer for the office:
+
+```bash
+cd desktop
+npm run build
+```
+
+The `.exe` and `.msi` land in `desktop\src-tauri\target\release\bundle`.
+
+Build notes, the permissions model and the reasoning behind the design are in
+[desktop/README.md](desktop/README.md).
+
+---
+
 ## What it does
 
 ### Home
@@ -398,6 +502,7 @@ Every account has one, whatever its role: click the initials at the top right an
 | Account | The account's initials as its picture, name and role, then user name, full name, the DOS menu the role replaces, how many permissions it grants, when the account was opened and when this sign-in began. Read-only — changing somebody's account is Users & Audit, which is where the permission for it lives. |
 | Security | Change your own password. Eight characters or more. You stay signed in on this device. **This is the only place it can be done** — it used to be in the account menu as well, which meant two ways in. The DOS key `9` still works and lands here. |
 | Appearance | **Light**, **Dark**, or **System**, which follows whatever the PC is set to and keeps following it. The choice is remembered in that browser on that PC, not on the account. |
+| Desktop app | Download and install the [desktop edition](#desktop-edition) on this PC — version, size, and a button. Opened from inside the app itself it says so instead, rather than offering somebody the thing they are already using. |
 | System | Company, application, version, and how many roles are defined. |
 
 The appearance choice is remembered in that browser, on that PC — not on the account. The
@@ -640,6 +745,7 @@ The API is self-documenting: with the server running, open **`/api/docs`**.
 | Admin | `/api/admin/users`, `roles`, `sessions`, `audit`, `stats` |
 | Maintenance | `GET /api/maintenance/status`, `purge-preview`, `restore-preview`, `backups/{name}/download`; `POST /api/maintenance/backup`, `backups/import`, `restore`, `retention`, `check`, `compact`, `purge`; `DELETE /api/maintenance/backups/{name}` |
 | Archive | `GET /api/archive/summary`, `/api/archive/{kind}`, `/api/archive/{kind}/{number}`, `/api/archive/moves/by-item/{code}` |
+| Desktop | `GET /api/desktop`, `/api/desktop/download` |
 
 ---
 
@@ -647,6 +753,7 @@ The API is self-documenting: with the server running, open **`/api/docs`**.
 
 ```
 start.bat               one-click start (creates the venv on first run)
+start-desktop.bat       runs the desktop edition from source
 lint.bat                lints backend and frontend, one pass/fail
 eslint.config.mjs       frontend lint rules
 package.json            dev-only tooling; nothing here is served to a browser
@@ -691,6 +798,18 @@ frontend/               browser application, no build step
       archive.js        archived records and archive inquiry
       …                 one module per remaining screen
 
+desktop/                the desktop edition (Tauri v2) - see desktop/README.md
+  package.json          the Tauri CLI, dev-only
+  app-icon.svg          source for the generated icon set
+  ui/                   the launcher, and the only page the shell bundles
+  src-tauri/
+    tauri.conf.json     product name, identifier, bundle targets, CSP
+    capabilities/       IPC permissions - the launcher window only
+    src/lib.rs          config, health probe, server process, tray
+
+releases/               the published desktop installer, handed out by Settings
+                        (gitignored - built output, tens of megabytes)
+
 database/               all gitignored
   ims.sqlite            the database itself, binary
   backups/              copies taken by the maintenance screen, also binary
@@ -719,6 +838,7 @@ Every setting is an environment variable, so nothing needs editing to move betwe
 | `IMS_LEGACY_DIR` | `legacy/` | Where `migrate.py` looks for `.DBF` files |
 | `IMS_PLAINTEXT_DIR` | `database/plaintext/` | Where `dump_db.py` writes the text dump |
 | `IMS_BACKUP_DIR` | `backups/` | Where backups are written |
+| `IMS_DESKTOP_DIR` | `releases/` | Where the desktop installer is published for Settings to hand out |
 | `IMS_BACKUP_ZIP_LEVEL` | `1` | Deflate level; `6` is ~25% smaller and ~3× slower |
 | `IMS_BACKUP_DAYS` | `7` | How long an automatic backup is kept |
 | `IMS_BACKUP_MANUAL_DAYS` | `14` | Manual window, until the office chooses one on the screen |
