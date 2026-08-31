@@ -638,7 +638,7 @@ The API is self-documenting: with the server running, open **`/api/docs`**.
 | Collections | `GET /api/collections`, `/{id}`, `/open-invoices/{customer}`, `POST`, `POST /{id}/reverse` |
 | Reports | `/api/reports/dashboard`, `aging`, `sales`, `purchases`, `inventory`, `expiring`, `depleted`, `movers`, `collections`, `inactive-customers` |
 | Admin | `/api/admin/users`, `roles`, `sessions`, `audit`, `stats` |
-| Maintenance | `GET /api/maintenance/status`, `purge-preview`, `restore-preview`; `POST /api/maintenance/backup`, `restore`, `retention`, `check`, `compact`, `purge` |
+| Maintenance | `GET /api/maintenance/status`, `purge-preview`, `restore-preview`, `backups/{name}/download`; `POST /api/maintenance/backup`, `backups/import`, `restore`, `retention`, `check`, `compact`, `purge`; `DELETE /api/maintenance/backups/{name}` |
 | Archive | `GET /api/archive/summary`, `/api/archive/{kind}`, `/api/archive/{kind}/{number}`, `/api/archive/moves/by-item/{code}` |
 
 ---
@@ -806,6 +806,22 @@ next backup. `IMS_BACKUP_MANUAL_DAYS` is only the answer until somebody chooses.
 The floor is the important half. Age alone would mean an office that closed for a fortnight came back
 to a backup folder that had tidied itself empty — so the three most recent always survive, however
 old they are, whichever kind they are.
+
+### Bringing one back from a device
+
+**Import backup**, next to *Back up now*, is the other half of Download. Pick a backup file off this
+PC, a memory stick, or a phone, and it goes onto the server and into the list — ready to restore
+from. Use it after rebuilding the office PC, or when the only copy left is the one you downloaded.
+
+Both shapes are accepted, because both are shapes this system has handed out: the **zip** it writes
+now, and a bare **`.sqlite`** from an older version. It decides which by looking inside the file
+rather than at its name, so a file somebody renamed still works.
+
+Nothing is trusted. The upload is checked before it becomes a backup — a real database, passing its
+integrity check, with the tables this version needs — and anything else is refused with the reason,
+leaving nothing behind. A file already named like one of ours keeps its name, so a backup downloaded
+last week and imported today is the same file it was; anything else is filed under today's date and
+marked `-imported`.
 
 ### Deleting one
 

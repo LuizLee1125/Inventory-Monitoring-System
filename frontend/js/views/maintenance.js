@@ -96,6 +96,7 @@ export async function render(container) {
          + ' download one now and then, and put it on a memory stick or another machine.']),
       el('div', { class: 'toolbar', style: 'margin:14px 0 0' }, [
         el('button', { class: 'btn primary', text: 'Back up now', onClick: runBackup }),
+        importButton(),
         el('span', { class: 'spacer' }),
         policy?.next_due
           ? el('span', { class: 'hint', text: `Next automatic backup ${dateTime(policy.next_due)}` })
@@ -258,6 +259,58 @@ async function askRestore(row) {
       },
     ],
   });
+}
+
+/**
+ * The other half of Download: put a backup file back onto the server.
+ *
+ * A `<label>` wrapping a hidden `<input type="file">` rather than a button that
+ * pokes an input — it is the one shape every browser opens a file picker for,
+ * including a phone, where the picker is the photo/Files sheet.
+ */
+function importButton() {
+  const picker = el('input', {
+    type: 'file',
+    accept: '.zip,.sqlite,application/zip',
+    style: 'display:none',
+  });
+
+  const caption = el('span', { text: 'Import backup' });
+  const label = el('label', {
+    class: 'btn',
+    title: 'Put a downloaded backup back onto the server',
+  }, [
+    el('span', { class: 'ico-upload', 'aria-hidden': 'true' }),
+    caption,
+    picker,
+  ]);
+
+  picker.addEventListener('change', async () => {
+    const file = picker.files?.[0];
+    if (!file) return;
+
+    label.classList.add('busy');
+    caption.textContent = `Importing ${count(Math.round(file.size / 1_048_576))} MB…`;
+
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const result = await api.upload('/maintenance/backups/import', form);
+      toast(`${result.name} imported — ${count(result.rows.invoices)} invoices, `
+            + `${count(result.rows.customers)} customers. It is in the list now, `
+            + 'ready to restore from.', 'success', 'Imported');
+      reload();
+    } catch (error) {
+      reportError(error);
+    } finally {
+      label.classList.remove('busy');
+      caption.textContent = 'Import backup';
+      // Choosing the same file twice fires no change event unless it is cleared.
+      picker.value = '';
+    }
+  });
+
+  return label;
 }
 
 const downloadUrl = (name) =>

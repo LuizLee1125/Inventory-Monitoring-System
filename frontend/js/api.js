@@ -27,11 +27,14 @@ function queryString(params) {
   return text ? `?${text}` : '';
 }
 
-async function request(method, path, { body, params } = {}) {
+async function request(method, path, { body, params, form } = {}) {
+  // A file goes up as multipart, which means letting the browser set the
+  // Content-Type itself — it has to add the boundary, and naming the type here
+  // would produce a header the server cannot parse.
   const response = await fetch(`/api${path}${queryString(params)}`, {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
+    body: form ?? (body ? JSON.stringify(body) : undefined),
     credentials: 'same-origin',
   });
 
@@ -57,4 +60,6 @@ export const api = {
   post: (path, body) => request('POST', path, { body }),
   put: (path, body) => request('PUT', path, { body }),
   del: (path) => request('DELETE', path),
+  /** Send a file. `fields` is a FormData the caller has already filled in. */
+  upload: (path, form) => request('POST', path, { form }),
 };

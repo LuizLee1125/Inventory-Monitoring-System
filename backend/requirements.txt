@@ -2,5 +2,10 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 
+# Multipart form parsing, which is how a backup file is uploaded from the
+# administrator's device on the Backup & Database screen. FastAPI needs it for
+# UploadFile and will not start the import endpoint without it.
+python-multipart>=0.0.9
+
 # Only needed to run web/migrate.py against the legacy .DBF files.
 dbfread>=2.0.7

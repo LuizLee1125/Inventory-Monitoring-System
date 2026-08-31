@@ -1046,12 +1046,21 @@ a { color: var(--primary); }
   .b-actions { flex: 1 1 100%; }
   .b-actions .btn { flex: 1; justify-content: center; padding: var(--sp-2); }
 }
-.ico-download {
+.ico-download, .ico-upload {
   width: 13px; height: 13px;
+  flex: none;
   background: currentColor;
   -webkit-mask: var(--icon-download) center / contain no-repeat;
   mask: var(--icon-download) center / contain no-repeat;
 }
+/* The same arrow, turned over. Import is download's opposite and should look
+   like it rather than like a different idea. */
+.ico-upload { transform: rotate(180deg); }
+
+/* A <label> acting as a button needs the pointer a button would have, and must
+   stop taking clicks while its upload is running. */
+label.btn { cursor: pointer; }
+label.btn.busy { opacity: .65; pointer-events: none; }
 
 /* A row of tags that wraps, for a list too long to read as prose. */
 .chips {

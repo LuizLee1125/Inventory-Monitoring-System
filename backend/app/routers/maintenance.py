@@ -8,6 +8,8 @@ single-file database - but neither needs the office to stop working.
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -18,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import config, db
@@ -64,15 +66,30 @@ def _backup_files() -> list[Path]:
     return sorted(found, key=lambda p: (p.stat().st_mtime, p.name), reverse=True)
 
 
+def is_zip(path: Path) -> bool:
+    """Decide by the first four bytes, not by the name.
+
+    An uploaded file is inspected while it is still called `something.part`, so
+    a suffix tells us nothing; and a file a person picked off a memory stick may
+    be named whatever they renamed it to. Every zip starts `PK\\x03\\x04`, so ask
+    the file.
+    """
+    try:
+        with path.open("rb") as handle:
+            return handle.read(4) == b"PK\x03\x04"
+    except OSError:
+        return False
+
+
 @contextmanager
 def open_backup(path: Path) -> Iterator[Path]:
     """Yield the database inside a backup, whatever the backup is wrapped in.
 
     A zip is expanded to a temporary file and cleaned up afterwards; a plain
-    `.sqlite` from before the format changed is handed over as it is, and must
-    not be deleted on the way out.
+    `.sqlite` — from before the format changed, or uploaded that way — is handed
+    over as it is, and must not be deleted on the way out.
     """
-    if path.suffix == ".sqlite":
+    if not is_zip(path):
         yield path
         return
 
@@ -424,18 +441,18 @@ def extract_backup(path: Path, into: Path) -> Path:
             if not names:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"{path.name} contains no database file. It is not a "
-                           f"backup of this system.")
+                    detail="This zip contains no database file, so it is not a "
+                           "backup of this system.")
             archive.extract(names[0], into)
             return into / names[0]
     except zipfile.BadZipFile as exc:
         raise HTTPException(
             status_code=400,
-            detail=f"{path.name} is not a readable zip ({exc}). It may have been "
-                   f"cut short - check for a newer backup.") from exc
+            detail=f"This zip cannot be read ({exc}). It may have been cut "
+                   f"short while it was copied.") from exc
 
 
-def inspect_backup(path: Path) -> dict:
+def inspect_backup(path: Path, label: str | None = None) -> dict:
     """Open a backup and decide whether it is safe to restore from.
 
     Restoring a truncated or half-written file over a working database would be
@@ -444,22 +461,36 @@ def inspect_backup(path: Path) -> dict:
     tables this version of the code expects.
     """
     with open_backup(path) as inner:
-        return _inspect_database(inner, path, path.stat().st_size)
+        return _inspect_database(inner, path, path.stat().st_size, label)
 
 
-def _inspect_database(inner: Path, path: Path, zipped: int) -> dict:
+def _inspect_database(inner: Path, path: Path, zipped: int,
+                      label: str | None = None) -> dict:
+    # What to call the file when something is wrong with it. An upload is still
+    # named `something.part` at this point, which would mean nothing to whoever
+    # chose it — they know it by the name on their memory stick.
+    shown = label or path.name
     try:
         conn = sqlite3.connect(f"{inner.as_uri()}?mode=ro", uri=True)
     except sqlite3.Error as exc:
         raise HTTPException(status_code=400,
-                            detail=f"{path.name} cannot be opened: {exc}") from exc
+                            detail=f"{shown} cannot be opened: {exc}") from exc
 
     try:
-        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        # SQLite opens lazily: connecting to a holiday photo succeeds, and the
+        # first statement is where it says otherwise. That is the common case
+        # for an upload, so it has to be an explanation rather than a 500.
+        try:
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        except sqlite3.DatabaseError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{shown} is not a database or a backup zip ({exc}).") from exc
+
         if integrity != "ok":
             raise HTTPException(
                 status_code=400,
-                detail=f"{path.name} failed its integrity check ({integrity}). "
+                detail=f"{shown} failed its integrity check ({integrity}). "
                        f"It is damaged and will not be restored.")
 
         present = {row[0] for row in conn.execute(
@@ -476,7 +507,7 @@ def _inspect_database(inner: Path, path: Path, zipped: int) -> dict:
         if missing:
             raise HTTPException(
                 status_code=400,
-                detail=f"{path.name} is missing {len(missing)} table(s) this version "
+                detail=f"{shown} is missing {len(missing)} table(s) this version "
                        f"needs ({', '.join(missing[:4])}). It is from an older system.")
 
         counts = {}
@@ -523,6 +554,137 @@ def download_backup(name: str,
                  f"{path.stat().st_size / 1_048_576:,.1f} MB")
     media = "application/zip" if path.suffix == ".zip" else "application/octet-stream"
     return FileResponse(path, media_type=media, filename=path.name)
+
+
+SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _import_name(uploaded: str, suffix: str) -> Path:
+    """Decide what an imported file is called once it is ours.
+
+    The name arrives from a browser on somebody's phone, so it is stripped to
+    its basename, reduced to characters that cannot mean anything to a path,
+    and then only *used* to build a name inside the backup folder. It is never
+    joined to a caller-supplied path.
+
+    A file that already looks like one of ours keeps its name, so a backup
+    downloaded last week and brought back today is the same file it was. Anything
+    else gets today's date and an `-imported` mark.
+    """
+    stem = SAFE_NAME.sub("-", Path(uploaded).name.removesuffix(suffix)).strip("-.")
+    if not stem.startswith("ims-") or len(stem) < 5:
+        now = datetime.now().astimezone()
+        stem = f"ims-{now.month}-{now.day}-{now.year}-imported"
+
+    target = BACKUP_DIR / f"{stem}{suffix}"
+    attempt = 2
+    while target.exists():
+        target = BACKUP_DIR / f"{stem}-{attempt}{suffix}"
+        attempt += 1
+    return target
+
+
+def _taken_at(path: Path) -> float | None:
+    """When the database inside a zip was actually copied, per the zip itself.
+
+    A backup imported today is not a backup *from* today, and the list is
+    ordered and aged by modified time. The zip records when its member was
+    added, which is the moment the backup was taken, so an imported file lands
+    in the list where it belongs rather than at the top.
+    """
+    if path.suffix != ".zip":
+        return None
+    try:
+        with zipfile.ZipFile(path) as archive:
+            members = [m for m in archive.infolist() if m.filename.endswith(".sqlite")]
+            if not members:
+                return None
+            # A zip stores local wall-clock time with no zone, which is exactly
+            # what mktime expects; -1 for isdst lets the platform work out
+            # whether that date was in daylight saving.
+            return time.mktime((*members[0].date_time, 0, 0, -1))
+    except (zipfile.BadZipFile, ValueError, OSError):
+        return None
+
+
+@router.post("/backups/import")
+async def import_backup(
+    file: UploadFile = File(...),
+    user: dict = Depends(require("maintenance:run")),
+) -> dict:
+    """Take a backup file from the administrator's device into the folder.
+
+    The other half of Download. A backup kept on a memory stick or a phone is
+    only useful if it can come back — onto a rebuilt PC, or after the disk that
+    held the originals failed. Both shapes are accepted, because both are things
+    this system has handed out: the zip it writes now, and the bare `.sqlite`
+    older versions wrote.
+
+    Nothing is trusted. The upload is written to a `.part`, verified as a real
+    database with the tables this version expects, and only then given its
+    final name. A file that fails leaves nothing behind.
+    """
+    suffix = "".join(Path(file.filename or "").suffixes[-1:]).lower()
+    if suffix not in (".zip", ".sqlite"):
+        raise HTTPException(
+            status_code=400,
+            detail="Choose a .zip or .sqlite backup. "
+                   f"{file.filename or 'That file'} is neither.")
+
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    target = _import_name(file.filename or "", suffix)
+    part = target.with_name(target.name + PART_SUFFIX)
+
+    free_mb = _disk_free_mb(BACKUP_DIR)
+    written = 0
+    try:
+        # Streamed in chunks: a backup is hundreds of megabytes and must never
+        # be held in memory, on a server that is somebody's office PC.
+        with part.open("wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written / 1_048_576 > free_mb - 50:
+                    raise BackupSpaceError(
+                        f"Not enough disk space: only {free_mb:,.0f} MB is free.")
+                out.write(chunk)
+
+        if not written:
+            raise HTTPException(status_code=400, detail="That file is empty.")
+
+        # Verified before it is allowed to become a backup, so the list never
+        # offers something that cannot actually be restored. Named by what the
+        # person chose, not by the `.part` it is still called here.
+        info = inspect_backup(part, label=Path(file.filename or "the file").name)
+    except BackupSpaceError as exc:
+        part.unlink(missing_ok=True)
+        raise HTTPException(status_code=507, detail=str(exc)) from exc
+    except Exception:
+        part.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
+
+    part.replace(target)
+
+    taken = _taken_at(target)
+    if taken:
+        os.utime(target, (taken, taken))
+
+    removed = prune_backups()
+    with db.transaction() as conn:
+        db.audit(conn, user["username"], "import", "backup", target.name,
+                 f"{written / 1_048_576:,.1f} MB uploaded")
+    print(f"  Backups : {target.name} imported by {user['username']}", flush=True)
+
+    return {
+        "name": target.name,
+        "size_mb": round(written / 1_048_576, 1),
+        "rows": info["rows"],
+        "taken_at": datetime.fromtimestamp(
+            target.stat().st_mtime).astimezone().isoformat(timespec="seconds"),
+        "removed": removed,
+        "backups": _backup_rows(),
+    }
 
 
 @router.delete("/backups/{name}")

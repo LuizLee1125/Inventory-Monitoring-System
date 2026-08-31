@@ -436,6 +436,41 @@ extraction for a zip, the file itself for a `.sqlite`, which must not then be
 deleted on the way out. Hiding somebody's existing backups because the format
 changed would be the worst possible way to introduce a new one.
 
+**Which format it is comes from the first four bytes, not the suffix.** An
+upload is inspected while it is still called `something.part`, so the suffix
+says nothing; and a file somebody kept on a memory stick may have been renamed
+to anything. Every zip starts `PK\x03\x04`. Deciding by name here was a real
+bug: it sent every bare `.sqlite` import into the unzipper, so the one case the
+feature existed to support could never work.
+
+### Importing
+
+`POST /backups/import` is the other half of Download, and the reason both
+directions exist: a backup on somebody's phone is only useful if it can come
+back — onto a rebuilt PC, or after the disk holding the originals failed.
+
+- **Streamed to a `.part` in 1 MB chunks**, never held in memory. This is a
+  server that is somebody's office PC and the file is hundreds of megabytes.
+- **Verified before it is allowed to become a backup** — a real database,
+  passing `integrity_check`, carrying the tables `db.reference_schema()`
+  expects. A failure deletes the `.part` and leaves nothing behind.
+- **SQLite opens lazily.** Connecting to a holiday photo *succeeds*; the first
+  statement is where it objects. So the `integrity_check` is wrapped
+  separately — without that, every bad upload was a 500 instead of an
+  explanation.
+- **Errors are named by what the person chose**, not by the `.part` the file is
+  still called on disk. They know it by the name on their memory stick.
+- **The filename is never a path.** It is reduced to its basename, stripped to
+  `[A-Za-z0-9._-]`, and only then used to build a name inside the backup
+  folder. A file already named like one of ours keeps its name, so
+  download-then-import round-trips; anything else becomes `-imported`.
+- **A zip's own timestamp sets the file's mtime**, because the list is ordered
+  and aged by that. A backup imported today is not a backup *from* today, and
+  without this it would sort to the top of the list pretending to be current.
+
+`python-multipart` is a hard dependency of this endpoint — FastAPI needs it for
+`UploadFile` — and is in `requirements.txt` for that reason alone.
+
 ### The name reads as a date, so the order comes from the clock
 
 `ims-8-31-2026.zip` — the date the way the office writes it and nothing else,
